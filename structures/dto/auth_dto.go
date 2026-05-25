@@ -1,5 +1,4 @@
 package dto
-
 // ==========================================
 // 3-Step OTP Registration Flow
 // ==========================================
@@ -14,10 +13,10 @@ type VerifyOTPReq struct {
 }
 
 type SetPasswordReq struct {
-	FullName        string `json:"full_name"` 
+    FullName        string `json:"full_name"` 
     Email           string `json:"email"`
     Password        string `json:"password"`
-    ConfirmPassword string `json:"confirm_password"`
+    ConfirmPassword string `json:"confirmPassword"`
 }
 
 // ==========================================
@@ -44,4 +43,17 @@ type UserRes struct {
 type AuthRes struct {
     Token string  `json:"token"`
     User  UserRes `json:"user"`
+}
+
+
+
+type ForgotPasswordReq struct {
+    Email string `json:"email" validate:"required,email"`
+}
+
+type ResetPasswordReq struct {
+    Email           string `json:"email" validate:"required,email"`
+    OTP             string `json:"otp" validate:"required,len=6"`
+    Password        string `json:"password" validate:"required,min=8"`
+    ConfirmPassword string `json:"confirmPassword" validate:"required,min=8"`
 }

@@ -13,12 +13,15 @@ import (
 type UserRepository interface {
 	CreateUser(user *models.User) error
 	FindByEmail(email string) (*models.User, error)
+	UpdatePassword(email string, hashedPassword string) error
+
 }
 
 // 2. The Struct (Holds the DB connection)
 type userRepositoryImpl struct {
 	db *gorm.DB
 }
+
 
 // 3. The Constructor (Used for Dependency Injection)
 func NewUserRepository(db *gorm.DB) UserRepository {
@@ -38,4 +41,9 @@ func (r *userRepositoryImpl) FindByEmail(email string) (*models.User, error) {
 		return nil, err
 	}
 	return &user, nil
+}
+func (r *userRepositoryImpl) UpdatePassword(email string, hashedPassword string) error {
+    return r.db.Model(&models.User{}).
+        Where("email = ?", email).
+        Update("password", hashedPassword).Error
 }
