@@ -43,7 +43,10 @@ func main() {
 	// ==========================================
 	log.Println("Running Database Migrations...")
 	// Tip: You can pass multiple models into AutoMigrate at once!
-	database.DB.AutoMigrate(&models.User{}, &models.Consultation{})
+	// database.DB.AutoMigrate(&models.User{}, &models.Consultation{})
+	database.DB.AutoMigrate(&models.User{},
+		 &models.Consultation{},
+		 &models.LoanApplication{})
 	
 	log.Println("Running Seeders...")
 	database.SeedAdmin()

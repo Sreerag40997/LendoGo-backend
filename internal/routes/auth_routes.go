@@ -13,7 +13,8 @@ func SetupAuthRoutes(api fiber.Router, authController *auth_controller.AuthContr
 	auth.Post("/verify-otp", authController.VerifyOTP)
 	auth.Post("/set-password", authController.SetPassword)
 	
-	// Keep login working
+	// Keep login working 
+
 	auth.Post("/login", authController.Login)
 
 	auth.Post("/forgot-password/send-otp", authController.ForgotPasswordSendOTP)

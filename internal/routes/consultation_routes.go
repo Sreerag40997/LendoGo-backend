@@ -2,7 +2,6 @@ package routes
 
 import (
 	controllers "lendogo-backend/internal/controllers/consultation_controller"
-
 	"github.com/gofiber/fiber/v2"
 )
 
