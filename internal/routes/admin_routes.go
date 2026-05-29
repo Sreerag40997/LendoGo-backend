@@ -2,21 +2,31 @@ package routes
 
 import (
 	"github.com/gofiber/fiber/v2"
-	
-	// 👇 FIX 1: Import the exact admin_controller package you just created
-	"lendogo-backend/internal/controllers/admin_controller" 
+
+	// Using the unified controllers package we just fixed!
+	controllers "lendogo-backend/internal/controllers/admin_controller"
 	"lendogo-backend/internal/middlewares"
 )
 
-// 👇 FIX 2: Point to admin_controller.AdminController
-func SetupAdminRoutes(api fiber.Router, adminCtrl *admin_controller.AdminController) {
+// SetupAdminRoutes locks down and routes all admin traffic
+func SetupAdminRoutes(api fiber.Router, adminCtrl *controllers.AdminController) {
 	// 1. Create a specific group for admin features
 	adminGroup := api.Group("/admin")
 
 	// 2. Apply BOTH middlewares to everything inside this group!
+	// (This guarantees nobody gets in without an Admin JWT)
 	adminGroup.Use(middlewares.Protected(), middlewares.AdminOnly())
 
-	// 3. Add your admin-only routes
+	// 3. Your existing admin routes
 	adminGroup.Get("/all-users", adminCtrl.GetAllUsers)
 	adminGroup.Get("/system-stats", adminCtrl.GetSystemStats)
+
+	// ==========================================
+	// 4. NEW: Loan Application Management
+	// ==========================================
+	// Fetches all loans + KYC + Financials in one big payload
+	adminGroup.Get("/applications", adminCtrl.GetAllApplications)
+	
+	// Mutates the status (UNDER_REVIEW -> APPROVED/REJECTED)
+	adminGroup.Patch("/applications/:id/status", adminCtrl.UpdateApplicationStatus)
 }

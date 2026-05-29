@@ -41,37 +41,38 @@ func (c *LoanController) ApplyForLoan(ctx *fiber.Ctx) error {
 		Pincode:          ctx.FormValue("pincode"),
 		LoanTrack:        ctx.FormValue("loan_track"),
 		ProductCategory:  ctx.FormValue("product_category"),
-		EmploymentStatus: ctx.FormValue("employment_status"),
 		PrincipalAmount:  principal,
 		TenureMonths:     tenure,
-		MonthlyIncome:    income,
 	}
+	loanApp.FinancialDocs.EmploymentStatus = ctx.FormValue("employment_status")
+	loanApp.FinancialDocs.MonthlyIncome = income
+
 
 	// 4. Handle File Uploads securely via S3
 	// We check if the file exists in the request. If it does, we upload it!
 	if file, err := ctx.FormFile("live_selfie"); err == nil {
 		if url, err := utils.UploadFileToS3(file); err == nil {
-			loanApp.LiveSelfiePath = url
+			loanApp.KYC.LiveSelfiePath = url
 		}
 	}
 	if file, err := ctx.FormFile("aadhaar_front"); err == nil {
 		if url, err := utils.UploadFileToS3(file); err == nil {
-			loanApp.AadhaarFrontPath = url
+			loanApp.KYC.AadhaarFrontPath = url
 		}
 	}
 	if file, err := ctx.FormFile("aadhaar_back"); err == nil {
 		if url, err := utils.UploadFileToS3(file); err == nil {
-			loanApp.AadhaarBackPath = url
+			loanApp.KYC.AadhaarBackPath = url
 		}
 	}
 	if file, err := ctx.FormFile("pan_card"); err == nil {
 		if url, err := utils.UploadFileToS3(file); err == nil {
-			loanApp.PanCardPath = url
+			loanApp.KYC.PanCardPath = url
 		}
 	}
 	if file, err := ctx.FormFile("bank_statement"); err == nil {
 		if url, err := utils.UploadFileToS3(file); err == nil {
-			loanApp.BankStatementPath = url
+			loanApp.FinancialDocs.BankStatementPath = url
 		}
 	}
 

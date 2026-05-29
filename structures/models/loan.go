@@ -2,17 +2,18 @@ package models
 
 import (
 	"time"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
-// LoanApplication represents the massive form the user submits
+// 1. Core Application (Contains all the basic text data and loan terms)
 type LoanApplication struct {
 	ID              uuid.UUID `gorm:"type:uuid;primaryKey"`
-	UserID          uuid.UUID `gorm:"type:uuid;not null"` // Links to the logged-in user
-	ReferenceNumber string    `gorm:"type:varchar(20);uniqueIndex"` // e.g., "LG-807191"
+	UserID          uuid.UUID `gorm:"type:uuid;not null"`
+	ReferenceNumber string    `gorm:"type:varchar(20);uniqueIndex"`
 
-	// 1. Applicant Details (From Step 1)
+	// Applicant Details
 	FullName     string `gorm:"type:varchar(100)"`
 	DOB          string `gorm:"type:varchar(20)"`
 	Email        string `gorm:"type:varchar(100)"`
@@ -22,39 +23,67 @@ type LoanApplication struct {
 	State        string
 	Pincode      string `gorm:"type:varchar(20)"`
 
-	// 2. Loan Configuration (From Step 2)
-	LoanTrack       string  `gorm:"type:varchar(50)"` // "Micro-Credit Hub" or "Elite Asset Funding"
-	ProductCategory string  `gorm:"type:varchar(50)"` // "Instant Personal Loan", etc.
+	// Loan Configuration
+	LoanTrack       string  `gorm:"type:varchar(50)"`
+	ProductCategory string  `gorm:"type:varchar(50)"`
 	PrincipalAmount float64 `gorm:"not null"`
 	TenureMonths    int     `gorm:"not null"`
-	InterestRate    float64 //
+	InterestRate    float64
 	EstimatedEMI    float64
 
-	// 3. KYC & Employment (From Step 3)
-	EmploymentStatus string  `gorm:"type:varchar(50)"`
-	MonthlyIncome    float64
+	ApplicationStatus string `gorm:"type:varchar(20);default:'UNDER_REVIEW'"`
 
-	// 4. Document Links (These will store the AWS S3 URLs)
-	LiveSelfiePath       string
-	AadhaarFrontPath     string
-	AadhaarBackPath      string
-	PanCardPath          string
-	BankStatementPath    string // Optional for low loans
-	PropertyAgreemntPath string // Optional for low loans
-	IncomeProofPath      string // Optional for low loans
+	// 👇 GORM MAGIC: These fields tell GORM to link the other two tables! 👇
+	KYC           KYCDocuments     `gorm:"foreignKey:LoanID;constraint:OnDelete:CASCADE;" json:"kyc_documents"`
+	FinancialDocs FinancialDetails `gorm:"foreignKey:LoanID;constraint:OnDelete:CASCADE;" json:"financial_details"`
 
-	// 5. App Status
-	ApplicationStatus string `gorm:"type:varchar(20);default:'UNDER_REVIEW'"` 
-	
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 }
 
-// Generate the UUID before saving to the database
+// 2. KYC Table (Strictly Identity & Security)
+type KYCDocuments struct {
+	ID               uuid.UUID `gorm:"type:uuid;primaryKey" json:"-"`
+	LoanID           uuid.UUID `gorm:"type:uuid;uniqueIndex;not null" json:"loan_id"` // uniqueIndex forces 1:1 Match
+	LiveSelfiePath   string    `json:"live_selfie_path"`
+	AadhaarFrontPath string    `json:"aadhaar_front_path"`
+	AadhaarBackPath  string    `json:"aadhaar_back_path"`
+	PanCardPath      string    `json:"pan_card_path"`
+}
+
+// 3. Financial Table (Strictly Income & Bank files)
+type FinancialDetails struct {
+	ID                    uuid.UUID `gorm:"type:uuid;primaryKey" json:"-"`
+	LoanID                uuid.UUID `gorm:"type:uuid;uniqueIndex;not null" json:"loan_id"` // uniqueIndex forces 1:1 Match
+	EmploymentStatus      string    `gorm:"type:varchar(50)" json:"employment_status"`
+	MonthlyIncome         float64   `json:"monthly_income"`
+	BankStatementPath     string    `json:"bank_statement_path"`
+	PropertyAgreemntPath  string    `json:"property_agreemnt_path"`
+	IncomeProofPath       string    `json:"income_proof_path"`
+}
+
+// ==========================================
+// UUID Generation Hooks for all 3 tables
+// ==========================================
+
 func (l *LoanApplication) BeforeCreate(tx *gorm.DB) (err error) {
 	if l.ID == uuid.Nil {
 		l.ID = uuid.New()
+	}
+	return
+}
+
+func (k *KYCDocuments) BeforeCreate(tx *gorm.DB) (err error) {
+	if k.ID == uuid.Nil {
+		k.ID = uuid.New()
+	}
+	return
+}
+
+func (f *FinancialDetails) BeforeCreate(tx *gorm.DB) (err error) {
+	if f.ID == uuid.Nil {
+		f.ID = uuid.New()
 	}
 	return
 }

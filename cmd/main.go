@@ -46,7 +46,9 @@ func main() {
 	// database.DB.AutoMigrate(&models.User{}, &models.Consultation{})
 	database.DB.AutoMigrate(&models.User{},
 		 &models.Consultation{},
-		 &models.LoanApplication{})
+		 &models.LoanApplication{},
+		 &models.KYCDocuments{},     // 👈 Add this new table
+        &models.FinancialDetails{},) // 👈 Add this new table
 	
 	log.Println("Running Seeders...")
 	database.SeedAdmin()
