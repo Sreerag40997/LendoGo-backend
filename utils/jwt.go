@@ -9,8 +9,8 @@ import (
 )
 
 // GenerateToken creates a secure JWT for a logged-in user
-// Updated: userID is now a string to support UUIDs
-func GenerateToken(userID string) (string, error) {
+// Updated: userID is now a string, and we added the 'role' parameter!
+func GenerateToken(userID string, role string) (string, error) { // 👈 FIX 1: Added 'role string'
     // 1. Grab the secret key from your .env file
     secret := os.Getenv("JWT_SECRET")
     if secret == "" {
@@ -19,7 +19,8 @@ func GenerateToken(userID string) (string, error) {
 
     // 2. Define the payload (claims)
     claims := jwt.MapClaims{
-        "user_id": userID,                                    // userID is now a string
+        "user_id": userID,                                    
+        "role":    role,                                      // 👈 FIX 2: Bake the role into the token!
         "exp":     time.Now().Add(time.Hour * 72).Unix(),     // Token expires in 72 hours
         "iat":     time.Now().Unix(),                         // Issued at time
     }

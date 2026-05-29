@@ -58,31 +58,34 @@ func (s *authServiceImpl) Register(req dto.RegisterReq) error {
 // 2. LOGIN
 // ==========================================
 func (s *authServiceImpl) Login(req dto.LoginReq) (*dto.AuthRes, error) {
-	user, err := s.userRepo.FindByEmail(req.Email)
-	if err != nil {
-		return nil, errors.New("invalid email or password")
-	}
+    user, err := s.userRepo.FindByEmail(req.Email)
+    if err != nil {
+        return nil, errors.New("invalid email or password")
+    }
 
-	isValid := utils.CheckPasswordHash(req.Password, user.Password)
-	if !isValid {
-		return nil, errors.New("invalid email or password")
-	}
+    isValid := utils.CheckPasswordHash(req.Password, user.Password)
+    if !isValid {
+        return nil, errors.New("invalid email or password")
+    }
 
-	token, err := utils.GenerateToken(user.ID.String())
-	if err != nil {
-		return nil, errors.New("failed to generate login token")
-	}
+    // 👇 FIX: Pass the user.Role as the second argument! 👇
+    token, err := utils.GenerateToken(user.ID.String(), user.Role)
+    
+    if err != nil {
+        return nil, errors.New("failed to generate login token")
+    }
 
-	res := &dto.AuthRes{
-		Token: token,
-		User: dto.UserRes{
-			ID:       user.ID.String(),
-			FullName: user.FullName,
-			Email:    user.Email,
-		},
-	}
+    res := &dto.AuthRes{
+        Token: token,
+        User: dto.UserRes{
+            ID:       user.ID.String(),
+            FullName: user.FullName,
+            Email:    user.Email,
+            Role:     user.Role, 
+        },
+    }
 
-	return res, nil
+    return res, nil
 }
 
 // ==========================================

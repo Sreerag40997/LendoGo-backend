@@ -3,7 +3,7 @@ package dto
 // 3-Step OTP Registration Flow
 // ==========================================
 type SendOTPReq struct {
-    FullName string `json:"full_name"`
+    FullName string `json:"fullName"`
     Email    string `json:"email"`
 }
 
@@ -13,7 +13,7 @@ type VerifyOTPReq struct {
 }
 
 type SetPasswordReq struct {
-    FullName        string `json:"full_name"` 
+    FullName        string `json:"fullName"` 
     Email           string `json:"email"`
     Password        string `json:"password"`
     ConfirmPassword string `json:"confirmPassword"`
@@ -23,7 +23,7 @@ type SetPasswordReq struct {
 // Standard Auth Flow
 // ==========================================
 type RegisterReq struct {
-    FullName string `json:"full_name"`
+    FullName string `json:"fullName"`
     Email    string `json:"email"`
     Password string `json:"password"`
 }
@@ -38,6 +38,7 @@ type UserRes struct {
     ID       string `json:"id"` // Changed to string for UUID compatibility
     FullName string `json:"full_name"`
     Email    string `json:"email"`
+    Role     string `json:"role"` 
 }
 
 type AuthRes struct {
