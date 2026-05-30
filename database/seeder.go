@@ -9,6 +9,20 @@ import (
 	"lendogo-backend/utils"
 )
 
+// RunSeeders is the master function to execute all database seeders
+func RunSeeders() {
+	log.Println("🌱 Starting database seeders...")
+
+	// 1. Run Admin Seeder
+	SeedAdmin()
+
+	// 2. Run System Wallet Seeder
+	seedSystemWallet()
+
+	log.Println("✅ All seeders executed successfully.")
+}
+
+// SeedAdmin creates the default master admin account if none exists
 func SeedAdmin() {
 	var adminCount int64
 
@@ -17,7 +31,7 @@ func SeedAdmin() {
 
 	if adminCount > 0 {
 		// An admin already exists, we don't need to do anything.
-		return 
+		return
 	}
 
 	log.Println("No admin found. Creating default master admin account...")
@@ -51,4 +65,22 @@ func SeedAdmin() {
 	}
 
 	log.Println("✅ Default Admin account created successfully!")
+}
+
+// seedSystemWallet ensures the Master Capital Ledger exists for Admin disbursements
+func seedSystemWallet() {
+	var wallet models.SystemWallet
+
+	// FirstOrCreate checks if a row with WalletName="capital_disbursement" exists.
+	// If not, it creates it with a 0.0 balance.
+	result := DB.FirstOrCreate(&wallet, models.SystemWallet{
+		WalletName: "capital_disbursement",
+		Balance:    0.0,
+	})
+
+	if result.Error != nil {
+		log.Printf("❌ Failed to seed System Wallet: %v\n", result.Error)
+	} else {
+		log.Println("💰 System Wallet verified/seeded.")
+	}
 }

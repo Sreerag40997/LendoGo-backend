@@ -7,7 +7,7 @@ import (
 	"lendogo-backend/internal/controllers/admin_controller"
 	"lendogo-backend/internal/controllers/auth_controller"
 	controllers "lendogo-backend/internal/controllers/consultation_controller"
-	"lendogo-backend/internal/controllers/loan_controller" 
+	"lendogo-backend/internal/controllers/loan_controller"
 	"lendogo-backend/internal/repositories"
 	"lendogo-backend/internal/routes"
 	"lendogo-backend/internal/services"
@@ -35,7 +35,7 @@ func SetupApp(app *fiber.App) {
 	authController := auth_controller.NewAuthController(authService)
 	consultationController := controllers.NewConsultationController(consultationService)
 	adminController := admin_controller.NewAdminController() 
-	loanController := loan_controller.NewLoanController(loanService) 
+	loanController := loan_controller.NewLoanController(loanService)
 
 	// ==========================================
 	// 4. ROUTER SETUP
@@ -46,4 +46,5 @@ func SetupApp(app *fiber.App) {
 	routes.SetupConsultationRoutes(api, consultationController)
 	routes.SetupAdminRoutes(api, adminController) 
 	routes.SetupLoanRoutes(api, loanController) 
+	routes.SetupWalletRoutes(api)
 }

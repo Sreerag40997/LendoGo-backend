@@ -106,6 +106,7 @@ func (c *AdminController) UpdateApplicationStatus(ctx *fiber.Ctx) error {
         "APPROVED":                 true, 
         "REJECTED":                 true, 
         "ADDITIONAL_DOCS_REQUIRED": true,
+        "DISBURSED":                true,
     }
     
     if !validStates[payload.Status] {
