@@ -1,88 +1,76 @@
-package walletcontroller
+package wallet_controller
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
-	"os"
-
 	"github.com/gofiber/fiber/v2"
-	"github.com/razorpay/razorpay-go"
-	"gorm.io/gorm"
-
-	"lendogo-backend/database"
-	"lendogo-backend/structures/models"
+	"lendogo-backend/internal/services"
 )
 
-// 1. Get Current Admin Wallet Balance
-func GetSystemBalance(c *fiber.Ctx) error {
-	var wallet models.SystemWallet
-	if err := database.DB.Where("wallet_name = ?", "capital_disbursement").First(&wallet).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Admin wallet not found"})
-	}
-	return c.JSON(fiber.Map{"balance": wallet.Balance})
+type WalletController struct {
+	service services.WalletService
 }
 
-// 2. Create Razorpay Order (Admin enters amount)
-func CreateRazorpayOrder(c *fiber.Ctx) error {
-	var req struct {
-		Amount float64 `json:"amount"` // The amount the admin typed in!
-	}
-	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid amount"})
-	}
+func NewWalletController(service services.WalletService) *WalletController {
+	return &WalletController{service: service}
+}
 
-	client := razorpay.NewClient(os.Getenv("RAZORPAY_KEY_ID"), os.Getenv("RAZORPAY_SECRET"))
-	
-	data := map[string]interface{}{
-		"amount":   int(req.Amount * 100), // Convert INR to Paise for Razorpay
-		"currency": "INR",
-		"receipt":  "admin_recharge_tx", 
-	}
-
-	body, err := client.Order.Create(data, nil)
+func (c *WalletController) GetSystemBalance(ctx *fiber.Ctx) error {
+	balance, err := c.service.GetBalance()
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to create order"})
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch balance"})
+	}
+	return ctx.JSON(fiber.Map{"balance": balance})
+}
+
+func (c *WalletController) CreateRazorpayOrder(ctx *fiber.Ctx) error {
+	var req struct {
+		Amount float64 `json:"amount"`
+	}
+	if err := ctx.BodyParser(&req); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request"})
 	}
 
-	return c.JSON(fiber.Map{
-		"order_id": body["id"],
-		"amount":   body["amount"],
+	orderData, err := c.service.GenerateRechargeOrder(req.Amount)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return ctx.JSON(fiber.Map{
+		"order_id": orderData["id"],
+		"amount":   orderData["amount"],
 	})
 }
 
-// 3. Verify Payment & Add Money to Admin Wallet
-func VerifyRazorpayPayment(c *fiber.Ctx) error {
+func (c *WalletController) VerifyRazorpayPayment(ctx *fiber.Ctx) error {
 	var req struct {
 		PaymentID string  `json:"razorpay_payment_id"`
 		OrderID   string  `json:"razorpay_order_id"`
 		Signature string  `json:"razorpay_signature"`
-		Amount    float64 `json:"amount"` // The amount to add to the DB
+		Amount    float64 `json:"amount"`
 	}
-	if err := c.BodyParser(&req); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid payload"})
-	}
-
-	// Cryptographic Security Check
-	secret := os.Getenv("RAZORPAY_SECRET")
-	data := req.OrderID + "|" + req.PaymentID
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(data))
-	expectedSignature := hex.EncodeToString(mac.Sum(nil))
-
-	if subtle.ConstantTimeCompare([]byte(expectedSignature), []byte(req.Signature)) != 1 {
-		return c.Status(401).JSON(fiber.Map{"error": "Fake payment detected!"})
+	if err := ctx.BodyParser(&req); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid payload"})
 	}
 
-	// ADD MONEY TO THE ADMIN WALLET IN POSTGRES
-	result := database.DB.Model(&models.SystemWallet{}).
-		Where("wallet_name = ?", "capital_disbursement").
-		UpdateColumn("balance", gorm.Expr("balance + ?", req.Amount))
-
-	if result.Error != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Database update failed"})
+	err := c.service.ProcessPaymentVerification(req.OrderID, req.PaymentID, req.Signature, req.Amount)
+	if err != nil {
+		return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	return c.JSON(fiber.Map{"message": "Admin Wallet recharged successfully!"})
+	return ctx.JSON(fiber.Map{"message": "Wallet recharged successfully!"})
 }
+func (c *WalletController) DeveloperCheatFund(ctx *fiber.Ctx) error {
+	var req struct {
+		Amount float64 `json:"amount"`
+	}
+	if err := ctx.BodyParser(&req); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid payload"})
+	}
+
+	// Use our new direct funding service
+	err := c.service.DirectFund(req.Amount)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to inject funds"})
+	}
+
+	return ctx.JSON(fiber.Map{"message": "💰 God Mode Activated: Funds injected successfully!"})
+}	

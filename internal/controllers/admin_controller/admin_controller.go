@@ -2,6 +2,8 @@ package admin_controller
 
 import (
     "github.com/gofiber/fiber/v2"
+    "gorm.io/gorm"
+    "gorm.io/gorm/clause"
 
     "lendogo-backend/database"
     "lendogo-backend/structures/models"
@@ -113,10 +115,81 @@ func (c *AdminController) UpdateApplicationStatus(ctx *fiber.Ctx) error {
         return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid state transition requested"})
     }
 
-    // Execute the partial update strictly on the core table based on UUID
+    // If the status is DISBURSED, perform atomic double-entry balance adjustment
+    if payload.Status == "DISBURSED" {
+        err := database.DB.Transaction(func(tx *gorm.DB) error {
+            var loan models.LoanApplication
+            if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&loan).Error; err != nil {
+                return err
+            }
+
+            // If it is already disbursed, do nothing
+            if loan.ApplicationStatus == "DISBURSED" {
+                return nil
+            }
+
+            // Lock System Wallet
+            var sysWallet models.SystemWallet
+            if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("wallet_name = ?", "capital_disbursement").First(&sysWallet).Error; err != nil {
+                return err
+            }
+
+            if sysWallet.Balance < loan.PrincipalAmount {
+                return fiber.NewError(fiber.StatusBadRequest, "Insufficient capital reserves in system wallet")
+            }
+
+            // Debit system wallet
+            if err := tx.Model(&sysWallet).UpdateColumn("balance", gorm.Expr("balance - ?", loan.PrincipalAmount)).Error; err != nil {
+                return err
+            }
+
+            // Credit borrower wallet
+            var userWallet models.UserWallet
+            if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", loan.UserID).FirstOrCreate(&userWallet, models.UserWallet{UserID: loan.UserID, Balance: 0}).Error; err != nil {
+                return err
+            }
+
+            if err := tx.Model(&userWallet).UpdateColumn("balance", gorm.Expr("balance + ?", loan.PrincipalAmount)).Error; err != nil {
+                return err
+            }
+
+            // Create ledger entries
+            entries := []models.LedgerEntry{
+                {
+                    WalletID:        sysWallet.ID,
+                    Amount:          -loan.PrincipalAmount,
+                    TransactionType: "DISBURSEMENT_DEBIT",
+					ReferenceID:     loan.ID.String(),
+                },
+                {
+                    WalletID:        userWallet.ID,
+					Amount:          loan.PrincipalAmount,
+                    TransactionType: "LOAN_CREDIT",
+					ReferenceID:     loan.ID.String(),
+                },
+            }
+            if err := tx.Create(&entries).Error; err != nil {
+                return err
+            }
+
+            // Set status to DISBURSED
+            return tx.Model(&loan).UpdateColumn("application_status", "DISBURSED").Error
+        })
+
+        if err != nil {
+            if fiberErr, ok := err.(*fiber.Error); ok {
+                return ctx.Status(fiberErr.Code).JSON(fiber.Map{"error": fiberErr.Message})
+            }
+            return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+        }
+
+        return ctx.SendStatus(fiber.StatusOK)
+    }
+
+    // For other statuses, simply execute the partial update on the application_status column
     result := database.DB.Model(&models.LoanApplication{}).
         Where("id = ?", id).
-        Update("status", payload.Status)
+        Update("application_status", payload.Status)
 
     if result.Error != nil {
         return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to commit state change"})
@@ -127,4 +200,22 @@ func (c *AdminController) UpdateApplicationStatus(ctx *fiber.Ctx) error {
     }
 
     return ctx.SendStatus(fiber.StatusOK)
+}
+
+// GetAllConsultations retrieves all consultation requests (Admin restricted).
+func (c *AdminController) GetAllConsultations(ctx *fiber.Ctx) error {
+    var consultations []models.Consultation
+
+    result := database.DB.Order("created_at DESC").Find(&consultations)
+
+    if result.Error != nil {
+        return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "error": "Failed to fetch consultations from database",
+        })
+    }
+
+    return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+        "message": "Consultations fetched successfully",
+        "data":    consultations,
+    })
 }

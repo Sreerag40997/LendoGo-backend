@@ -29,4 +29,7 @@ func SetupAdminRoutes(api fiber.Router, adminCtrl *controllers.AdminController) 
 	
 	// Mutates the status (UNDER_REVIEW -> APPROVED/REJECTED)
 	adminGroup.Patch("/applications/:id/status", adminCtrl.UpdateApplicationStatus)
+
+	// Fetches all free consultation requests from database
+	adminGroup.Get("/consultations", adminCtrl.GetAllConsultations)
 }
