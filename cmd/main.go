@@ -49,7 +49,8 @@ func main() {
 		 &models.LoanApplication{},
 		 &models.KYCDocuments{},     
         &models.FinancialDetails{},
-		&models.SystemWallet{},) 
+		&models.SystemWallet{},
+		&models.ChatMessage{},) 
 	
 	log.Println("Running Seeders...")
 	database.SeedAdmin()
