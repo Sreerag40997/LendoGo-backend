@@ -7,8 +7,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.18
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.22.20
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.102.0
+	github.com/gofiber/contrib/websocket v1.3.4
 	github.com/gofiber/fiber/v2 v2.52.13
 	github.com/joho/godotenv v1.5.1
+	github.com/razorpay/razorpay-go v1.4.1
 	github.com/redis/go-redis/v9 v9.19.0
 	golang.org/x/crypto v0.52.0
 	gorm.io/driver/postgres v1.6.0
@@ -32,8 +34,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.42.1 // indirect
 	github.com/aws/smithy-go v1.25.1 // indirect
 	github.com/fasthttp/websocket v1.5.8 // indirect
-	github.com/gofiber/contrib/websocket v1.3.4 // indirect
-	github.com/razorpay/razorpay-go v1.4.1 // indirect
 	github.com/savsgio/gotils v0.0.0-20240303185622-093b76447511 // indirect
 	golang.org/x/net v0.54.0 // indirect
 )

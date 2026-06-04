@@ -2,7 +2,6 @@ package chat_controller
 
 import (
 	"log"
-	"strconv"
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
@@ -20,11 +19,14 @@ func NewChatController(hub *services.ChatHub) *ChatController {
 	return &ChatController{hub: hub}
 }
 
+// ==========================================
+// 1. WEBSOCKET LOGIC (Real-time chatting)
+// ==========================================
+
 // Upgrade HTTP to WebSocket
 func (cc *ChatController) UpgradeWebSocket(c *fiber.Ctx) error {
-	// Is this a websocket request?
 	if websocket.IsWebSocketUpgrade(c) {
-		return c.Next() // Allow it to pass to the handler
+		return c.Next()
 	}
 	return fiber.ErrUpgradeRequired
 }
@@ -32,46 +34,68 @@ func (cc *ChatController) UpgradeWebSocket(c *fiber.Ctx) error {
 // Handle the active connection
 func (cc *ChatController) HandleConnection() fiber.Handler {
 	return websocket.New(func(c *websocket.Conn) {
-		// 1. Get the user ID from the connection URL (e.g., ws://.../chat?user_id=5)
-		// For the admin dashboard, we can pass user_id=0
-	userIDString := c.Query("user_id", "0")
-userID, _ := strconv.Atoi(userIDString)
+		// Get the user ID from the connection URL as a string (UUID)
+		userID := c.Query("user_id", "0")
 
-		// 2. Create the client object
 		client := &services.Client{
 			Conn:   c,
-			UserID: uint(userID),
+			UserID: userID,
 		}
 
-		// 3. Register the user into the Hub
 		cc.hub.Register <- client
 
-		// 4. When they close the browser, unregister them
 		defer func() {
 			cc.hub.Unregister <- client
 		}()
 
-		// 5. Infinite loop to listen for incoming messages from this user
-// 5. Infinite loop to listen for incoming messages
+		// Infinite loop to listen for incoming messages
 		for {
-			var incomingMsg dto.IncomingMessage 
-			
+			var incomingMsg dto.IncomingMessage
+
 			err := c.ReadJSON(&incomingMsg)
 			if err != nil {
 				log.Println("WebSocket closed or error:", err)
-				break 
+				break
 			}
 
-			// Format the response DTO
 			responseMsg := dto.OutgoingMessage{
 				SenderID:    client.UserID,
+				ReceiverID:  incomingMsg.ReceiverID,
 				IsFromAdmin: incomingMsg.IsFromAdmin,
 				Text:        incomingMsg.Text,
 				Timestamp:   time.Now(),
 			}
 
-			// Right now, just log it. (Next step: broadcast it and save to DB!)
+			// Push into the hub — it handles DB save + routing
+			cc.hub.Broadcast <- services.BroadcastMessage{
+				Sender:  client,
+				Payload: responseMsg,
+			}
+
 			log.Printf("📩 Clean Message Received: %+v\n", responseMsg)
 		}
+	})
+}
+
+// ==========================================
+// 2. REST API LOGIC (For Admin Initial Load)
+// ==========================================
+
+// GetAdminChatSessions returns the list of users currently chatting
+func (cc *ChatController) GetAdminChatSessions(c *fiber.Ctx) error {
+	// Fetch the preloaded active sessions from our repository
+	sessions, err := cc.hub.Repo.GetActiveChatSessions()
+	
+	if err != nil {
+		log.Println("Error fetching chat sessions:", err)
+		return c.Status(500).JSON(fiber.Map{
+			"success": false, 
+			"error": "Failed to load chats",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    sessions,
 	})
 }

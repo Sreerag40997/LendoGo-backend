@@ -6,12 +6,13 @@ import "time"
 type IncomingMessage struct {
 	Text        string `json:"text"`
 	IsFromAdmin bool   `json:"is_from_admin"`
-	ReceiverID  uint   `json:"receiver_id"` // Who is this going to?
+	ReceiverID  string `json:"receiver_id"` // Who is this going to?
 }
 
 // OutgoingMessage is what Go broadcasts back to React
 type OutgoingMessage struct {
-	SenderID    uint      `json:"sender_id"`
+	SenderID    string    `json:"sender_id"`
+	ReceiverID  string    `json:"receiver_id"`
 	IsFromAdmin bool      `json:"is_from_admin"`
 	Text        string    `json:"text"`
 	Timestamp   time.Time `json:"timestamp"`

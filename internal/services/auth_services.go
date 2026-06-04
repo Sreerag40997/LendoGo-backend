@@ -17,7 +17,7 @@ import (
 type AuthService interface {
 	Register(req dto.RegisterReq) error
 	Login(req dto.LoginReq) (*dto.AuthRes, error)
-	
+
 	// New Forgot Password Methods
 	SendForgotPasswordOTP(email string) error
 	ResetPassword(req dto.ResetPasswordReq) error
@@ -58,35 +58,40 @@ func (s *authServiceImpl) Register(req dto.RegisterReq) error {
 // 2. LOGIN
 // ==========================================
 func (s *authServiceImpl) Login(req dto.LoginReq) (*dto.AuthRes, error) {
-    user, err := s.userRepo.FindByEmail(req.Email)
-    if err != nil {
-        return nil, errors.New("invalid email or password")
-    }
+	user, err := s.userRepo.FindByEmail(req.Email)
+	if err != nil {
+		return nil, errors.New("invalid email or password")
+	}
 
-    isValid := utils.CheckPasswordHash(req.Password, user.Password)
-    if !isValid {
-        return nil, errors.New("invalid email or password")
-    }
+	isValid := utils.CheckPasswordHash(req.Password, user.Password)
+	if !isValid {
+		return nil, errors.New("invalid email or password")
+	}
 
-    // 👇 FIX: Pass the user.Role as the second argument! 👇
-    token, err := utils.GenerateToken(user.ID.String(), user.Role)
-    
-    if err != nil {
-        return nil, errors.New("failed to generate login token")
-    }
+	// 🚀 ENFORCE ADMIN ROLE FOR ADMIN ACCOUNTS (Even if DB says 'user')
+	effectiveRole := user.Role
+	if user.Email == "admin@gmail.com" || user.Email == "admin.flow@lendogo.com" {
+		effectiveRole = "admin"
+	}
 
-    res := &dto.AuthRes{
-        Token: token,
-        User: dto.UserRes{
-            ID:       user.ID.String(),
-            FullName: user.FullName,
-            Email:    user.Email,
-            Role:     user.Role, 
+	// ✅ FIXED: Pass all 4 required string arguments to GenerateToken
+	token, err := utils.GenerateToken(user.ID.String(), effectiveRole, user.FullName, user.Email)
+	if err != nil {
+		return nil, errors.New("failed to generate login token")
+	}
+
+	res := &dto.AuthRes{
+		Token: token,
+		User: dto.UserRes{
+			ID:       user.ID.String(),
+			FullName: user.FullName,
+			Email:    user.Email,
+			Role:     effectiveRole,
 			Status:   user.Status,
-        },
-    }
+		},
+	}
 
-    return res, nil
+	return res, nil
 }
 
 // ==========================================
@@ -119,7 +124,7 @@ func (s *authServiceImpl) SendForgotPasswordOTP(email string) error {
 		return errors.New("failed to generate OTP")
 	}
 
-	// STEP E: Set Cooldown in Redis (Locks them out from requesting another for 2 minutes)
+	// STEP E: Set Cooldown in Redis (Locks them out for 2 minutes)
 	database.RedisClient.Set(ctx, cooldownKey, "locked", 2*time.Minute)
 
 	// STEP F: Send the Email
@@ -144,13 +149,13 @@ func (s *authServiceImpl) ResetPassword(req dto.ResetPasswordReq) error {
 		return errors.New("invalid or expired OTP")
 	}
 
-	// STEP B: Hash the new password using your existing utils
+	// STEP B: Hash the new password
 	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
 		return errors.New("failed to secure new password")
 	}
 
-	// STEP C: Update Database using the new repository function
+	// STEP C: Update Database
 	err = s.userRepo.UpdatePassword(req.Email, hashedPassword)
 	if err != nil {
 		return errors.New("failed to update password in database")
