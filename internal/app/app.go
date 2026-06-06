@@ -24,18 +24,21 @@ func SetupApp(app *fiber.App) {
 	userRepo := repositories.NewUserRepository(database.DB)
 	consultationRepo := repositories.NewConsultationRepository(database.DB)
 	loanRepo := repositories.NewLoanRepository(database.DB)
-	walletRepo := repositories.NewWalletRepository(database.DB) 
+	walletRepo := repositories.NewWalletRepository(database.DB)
 	chatRepo := repositories.NewChatRepository(database.DB)
+
 	// ==========================================
-	// 2. SERVICES (Business Logic Layer)
+	// 2. SERVICES & HUBS (Business Logic Layer)
 	// ==========================================
 	authService := services.NewAuthService(userRepo)
 	consultationService := services.NewConsultationService(consultationRepo)
 	loanService := services.NewLoanService(loanRepo)
-	walletService := services.NewWalletService(walletRepo) // 👈 Wired up Wallet Service
+	walletService := services.NewWalletService(walletRepo)
 
+	// Initialize and run the WebSocket Chat Hub in a background goroutine
 	chatHub := services.NewChatHub(chatRepo)
 	go chatHub.Run()
+
 	// ==========================================
 	// 3. CONTROLLERS (HTTP Layer)
 	// ==========================================
@@ -45,13 +48,9 @@ func SetupApp(app *fiber.App) {
 	loanController := loan_controller.NewLoanController(loanService)
 	walletController := wallet_controller.NewWalletController(walletService)
 	chatController := chat_controller.NewChatController(chatHub)
-		// ==========================================
-	// 4. CHAT SERVICE
-	// ==========================================
-
 
 	// ==========================================
-	// 5. ROUTER SETUP
+	// 4. ROUTER SETUP
 	// ==========================================
 	api := app.Group("/api")
 
@@ -60,5 +59,5 @@ func SetupApp(app *fiber.App) {
 	routes.SetupAdminRoutes(api, adminController)
 	routes.SetupLoanRoutes(api, loanController)
 	routes.SetupWalletRoutes(api, walletController)
-	routes.SetupChatRoutes(api,chatController)
+	routes.SetupChatRoutes(api, chatController)
 }

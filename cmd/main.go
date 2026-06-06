@@ -50,7 +50,9 @@ func main() {
 		 &models.KYCDocuments{},     
         &models.FinancialDetails{},
 		&models.SystemWallet{},
-		&models.ChatMessage{},) 
+		&models.ChatMessage{},
+		&models.UserWallet{},
+	    &models.LedgerEntry{},) 
 	
 	log.Println("Running Seeders...")
 	database.SeedAdmin()
@@ -63,6 +65,6 @@ func main() {
 	// Call your new app.go hub to wire everything together
 	app.SetupApp(fiberApp)
 
-	log.Println("🚀 Fiber Server running on port 8080...")
+	log.Println("Fiber Server running on port 8080...")
 	log.Fatal(fiberApp.Listen(":8080"))
 }
