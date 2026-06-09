@@ -13,8 +13,8 @@ type WalletRepository interface {
 	GetSystemBalance() (float64, error)
 	CreditSystemWallet(amount float64) error
 	ExecuteDisbursal(loanID uuid.UUID, userID uuid.UUID, netPayout float64) error
-	
-	// 👇 NEW: Fetch User Balance
+
+	// Fetch User Balance
 	GetUserBalance(userID uuid.UUID) (float64, error)
 }
 
@@ -70,17 +70,20 @@ func (r *walletRepositoryImpl) ExecuteDisbursal(loanID uuid.UUID, userID uuid.UU
 
 		// 3. Lock and Credit User Wallet (Create if missing)
 		var userWallet models.UserWallet
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", userID).First(&userWallet).Error
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				userWallet = models.UserWallet{UserID: userID, Balance: 0}
-				if err := tx.Create(&userWallet).Error; err != nil {
-					return err
-				}
-			} else {
+		// 👇 FIX: Use .Limit(1).Find() to silently check for the wallet without triggering GORM logs
+		result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", userID).Limit(1).Find(&userWallet)
+		if result.Error != nil {
+			return result.Error // Real DB connection error
+		}
+
+		if result.RowsAffected == 0 {
+			// No wallet found! Create it silently.
+			userWallet = models.UserWallet{UserID: userID, Balance: 0}
+			if err := tx.Create(&userWallet).Error; err != nil {
 				return err
 			}
 		}
+
 		// Add funds safely using DB-level math
 		if err := tx.Model(&userWallet).UpdateColumn("balance", gorm.Expr("balance + ?", netPayout)).Error; err != nil {
 			return err
@@ -105,16 +108,21 @@ func (r *walletRepositoryImpl) ExecuteDisbursal(loanID uuid.UUID, userID uuid.UU
 // USER WALLET LOGIC
 // ==========================================
 
-// GetUserBalance fetches the real money balance for a specific user
+// GetUserBalance safely fetches the real money balance without spamming logs!
 func (r *walletRepositoryImpl) GetUserBalance(userID uuid.UUID) (float64, error) {
 	var wallet models.UserWallet
-	err := r.db.Where("user_id = ?", userID).First(&wallet).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// If they have no wallet row yet, their balance is legally 0.00
-			return 0, nil 
-		}
-		return 0, err
+	
+	// 👇 FIX: Use .Limit(1).Find() to prevent GORM from logging "record not found"
+	result := r.db.Where("user_id = ?", userID).Limit(1).Find(&wallet)
+	
+	if result.Error != nil {
+		return 0, result.Error
 	}
+	
+	if result.RowsAffected == 0 {
+		// If they have no wallet row yet, their balance is legally 0.00
+		return 0, nil 
+	}
+	
 	return wallet.Balance, nil
 }

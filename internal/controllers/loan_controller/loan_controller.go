@@ -2,6 +2,7 @@ package loan_controller
 
 import (
 	"strconv"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
@@ -20,8 +21,21 @@ func NewLoanController(service services.LoanService) *LoanController {
 
 // ApplyForLoan handles the multipart/form-data request from React
 func (c *LoanController) ApplyForLoan(ctx *fiber.Ctx) error {
-	// 1. Get the User ID from the secure HttpOnly cookie
-	userID := ctx.Locals("user_id").(string)
+	// 1. STRICT AUTH: Get the User ID ONLY from the secure JWT token
+	localUID, ok := ctx.Locals("user_id").(string)
+	if !ok || localUID == "" {
+		return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": "Unauthorized: Missing secure token identification",
+		})
+	}
+
+	// Safely parse the UUID so the server doesn't crash if the token is corrupted
+	parsedUserID, err := uuid.Parse(localUID)
+	if err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Security alert: Invalid user ID format in token",
+		})
+	}
 
 	// 2. Parse the text fields from the form
 	principal, _ := strconv.ParseFloat(ctx.FormValue("principal_amount"), 64)
@@ -30,26 +44,24 @@ func (c *LoanController) ApplyForLoan(ctx *fiber.Ctx) error {
 
 	// 3. Build the base Loan Application model
 	loanApp := &models.LoanApplication{
-		UserID:           uuid.MustParse(userID),
-		FullName:         ctx.FormValue("full_name"),
-		DOB:              ctx.FormValue("dob"),
-		Email:            ctx.FormValue("email"),
-		MobileNumber:     ctx.FormValue("mobile_number"),
-		Address:          ctx.FormValue("address"),
-		City:             ctx.FormValue("city"),
-		State:            ctx.FormValue("state"),
-		Pincode:          ctx.FormValue("pincode"),
-		LoanTrack:        ctx.FormValue("loan_track"),
-		ProductCategory:  ctx.FormValue("product_category"),
-		PrincipalAmount:  principal,
-		TenureMonths:     tenure,
+		UserID:          parsedUserID, // 👈 Now strictly using the verified token ID!
+		FullName:        ctx.FormValue("full_name"),
+		DOB:             ctx.FormValue("dob"),
+		Email:           ctx.FormValue("email"),
+		MobileNumber:    ctx.FormValue("mobile_number"),
+		Address:         ctx.FormValue("address"),
+		City:            ctx.FormValue("city"),
+		State:           ctx.FormValue("state"),
+		Pincode:         ctx.FormValue("pincode"),
+		LoanTrack:       ctx.FormValue("loan_track"),
+		ProductCategory: ctx.FormValue("product_category"),
+		PrincipalAmount: principal,
+		TenureMonths:    tenure,
 	}
 	loanApp.FinancialDocs.EmploymentStatus = ctx.FormValue("employment_status")
 	loanApp.FinancialDocs.MonthlyIncome = income
 
-
 	// 4. Handle File Uploads securely via S3
-	// We check if the file exists in the request. If it does, we upload it!
 	if file, err := ctx.FormFile("live_selfie"); err == nil {
 		if url, err := utils.UploadFileToS3(file); err == nil {
 			loanApp.KYC.LiveSelfiePath = url
@@ -77,17 +89,18 @@ func (c *LoanController) ApplyForLoan(ctx *fiber.Ctx) error {
 	}
 
 	// 5. Send it to the Service to do the math and save to the Database!
-	err := c.service.ProcessApplication(loanApp)
+	err = c.service.ProcessApplication(loanApp)
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to process loan application",
 		})
 	}
 
-	// 6. SUCCESS! Send the Reference Number back to React
+	// 6. SUCCESS! Send the Reference Number and ID back to React
 	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message":          "Loan Application Submitted Successfully!",
 		"reference_number": loanApp.ReferenceNumber,
+		"id":               loanApp.ID,
 		"estimated_emi":    loanApp.EstimatedEMI,
 		"status":           loanApp.ApplicationStatus,
 	})

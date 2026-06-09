@@ -1,95 +1,143 @@
 package app
 
 import (
-	"context" // 👈 Added for Kafka background context
-	"os"      // 👈 Added to read the .env KAFKA_BROKER
+	"context"
+	"os"
 
 	"github.com/gofiber/fiber/v2"
 
 	"lendogo-backend/database"
+	"lendogo-backend/internal/consumers"
 	"lendogo-backend/internal/controllers/admin_controller"
 	"lendogo-backend/internal/controllers/auth_controller"
 	"lendogo-backend/internal/controllers/chat_controller"
 	consultation_controller "lendogo-backend/internal/controllers/consultation_controller"
 	"lendogo-backend/internal/controllers/loan_controller"
+	"lendogo-backend/internal/controllers/payment_controller" // 👈 NEW: Imported Payment Controller
 	"lendogo-backend/internal/controllers/user_profile_controller"
 	"lendogo-backend/internal/controllers/wallet_controller"
+	"lendogo-backend/internal/jobs"
 	"lendogo-backend/internal/repositories"
 	"lendogo-backend/internal/routes"
 	"lendogo-backend/internal/services"
-
-	"lendogo-backend/internal/consumers"
-	"lendogo-backend/utils" // 👇 THIS IS NOW UNCOMMENTED
+	"lendogo-backend/utils"
 )
 
-// SetupApp initializes all dependencies and registers routes
+// SetupApp is now incredibly clean. You can read it like a book!
 func SetupApp(app *fiber.App) {
+	// 1. Setup Infrastructure
+	kafkaProducer := setupKafka()
 
-	// ==========================================
-	// 1. KAFKA INFRASTRUCTURE SETUP 🚀
-	// ==========================================
-	kafkaBroker := os.Getenv("KAFKA_BROKER")
-	if kafkaBroker == "" {
-		kafkaBroker = "localhost:9092"
+	// 2. Wire Dependencies
+	repos := setupRepositories()
+	businessServices := setupServices(repos, kafkaProducer)
+
+	// 3. Boot Background Workers
+	startConsumers(businessServices)
+
+	// Boot the Time Machine (Cronjobs)
+	startCronJobs(businessServices)
+
+	// 4. Mount Routes (👇 Notice we pass 'repos' here now!)
+	setupRoutes(app, businessServices, repos)
+}
+
+// ==========================================
+// 🛠️ HELPER FUNCTIONS
+// ==========================================
+
+func setupKafka() *utils.KafkaProducer {
+	broker := os.Getenv("KAFKA_BROKER")
+	if broker == "" {
+		broker = "localhost:9092"
+	}
+	return utils.NewKafkaProducer(broker)
+}
+
+// Struct to hold all our Repositories
+type Repositories struct {
+	User         repositories.UserRepository
+	Consultation repositories.ConsultationRepository
+	Loan         repositories.LoanRepository
+	Wallet       repositories.WalletRepository
+	Chat         repositories.ChatRepository
+	Profile      repositories.UserProfileRepository
+	Payment      repositories.PaymentRepository // 👈 NEW
+}
+
+func setupRepositories() Repositories {
+	return Repositories{
+		User:         repositories.NewUserRepository(database.DB),
+		Consultation: repositories.NewConsultationRepository(database.DB),
+		Loan:         repositories.NewLoanRepository(database.DB),
+		Wallet:       repositories.NewWalletRepository(database.DB),
+		Chat:         repositories.NewChatRepository(database.DB),
+		Profile:      repositories.NewUserProfileRepository(database.DB),
+		Payment:      repositories.NewPaymentRepository(database.DB), // 👈 NEW
+	}
+}
+
+// Struct to hold all our Services
+type Services struct {
+	Auth         services.AuthService
+	Consultation services.ConsultationService
+	Loan         services.LoanService
+	Wallet       services.WalletService
+	Profile      services.UserProfileService
+	ChatHub      *services.ChatHub
+	Payment      services.PaymentService // 👈 NEW
+}
+
+func setupServices(r Repositories, producer *utils.KafkaProducer) Services {
+	hub := services.NewChatHub(r.Chat)
+	go hub.Run()
+
+	return Services{
+		Auth:         services.NewAuthService(r.User),
+		Consultation: services.NewConsultationService(r.Consultation),
+		Loan:         services.NewLoanService(r.Loan),
+		Wallet:       services.NewWalletService(r.Wallet, producer),
+		Profile:      services.NewUserProfileService(r.Profile),
+		ChatHub:      hub,
+		Payment:      services.NewPaymentService(), // 👈 NEW
+	}
+}
+
+func startConsumers(s Services) {
+	broker := os.Getenv("KAFKA_BROKER")
+	if broker == "" {
+		broker = "localhost:9092"
 	}
 
-	// 👇 THIS IS NOW UNCOMMENTED
-	kafkaProducer := utils.NewKafkaProducer(kafkaBroker)
-
-	// ==========================================
-	// 2. REPOSITORIES (Data Layer)
-	// ==========================================
-	userRepo := repositories.NewUserRepository(database.DB)
-	consultationRepo := repositories.NewConsultationRepository(database.DB)
-	loanRepo := repositories.NewLoanRepository(database.DB)
-	walletRepo := repositories.NewWalletRepository(database.DB)
-	chatRepo := repositories.NewChatRepository(database.DB)
-	profileRepo := repositories.NewUserProfileRepository(database.DB)
-
-	// ==========================================
-	// 3. SERVICES & HUBS (Business Logic Layer)
-	// ==========================================
-	authService := services.NewAuthService(userRepo)
-	consultationService := services.NewConsultationService(consultationRepo)
-	loanService := services.NewLoanService(loanRepo)
-
-	// 👇 THIS LINE IS THE FIX: We are now passing the kafkaProducer into the service!
-	walletService := services.NewWalletService(walletRepo, kafkaProducer)
-
-	profileService := services.NewUserProfileService(profileRepo)
-
-	chatHub := services.NewChatHub(chatRepo)
-	go chatHub.Run()
-
-	// ==========================================
-	// 4. KAFKA CONSUMERS (Background Workers) 📥
-	// ==========================================
-	paymentConsumer := consumers.NewPaymentConsumer(
-		kafkaBroker,
-		"telemetry.payments",
-		"payment-processor-group",
-		loanService,
-	)
-
-	// 🔥 Start the consumer safely in the background!
+	paymentConsumer := consumers.NewPaymentConsumer(broker, "telemetry.payments", "payment-processor-group", s.Loan)
 	go paymentConsumer.Start(context.Background())
 
-	// ==========================================
-	// 5. CONTROLLERS (HTTP Layer)
-	// ==========================================
-	authController := auth_controller.NewAuthController(authService)
-	consultationController := consultation_controller.NewConsultationController(consultationService)
-	adminController := admin_controller.NewAdminController()
-	loanController := loan_controller.NewLoanController(loanService)
-	walletController := wallet_controller.NewWalletController(walletService)
-	chatController := chat_controller.NewChatController(chatHub)
-	profileController := user_profile_controller.NewUserProfileController(profileService)
+	loanConsumer := consumers.NewLoanConsumer(broker, "telemetry.loans", "loan-processor-group", s.Loan)
+	go loanConsumer.Start(context.Background())
+}
 
-	// ==========================================
-	// 6. ROUTER SETUP
-	// ==========================================
+func startCronJobs(s Services) {
+	emiJob := jobs.NewEMICheckerJob(s.Loan)
+	emiJob.Start()
+}
+
+// 👇 Updated signature to accept Repositories
+func setupRoutes(app *fiber.App, s Services, r Repositories) {
 	api := app.Group("/api")
 
+	// Initialize Controllers
+	authController := auth_controller.NewAuthController(s.Auth)
+	consultationController := consultation_controller.NewConsultationController(s.Consultation)
+	adminController := admin_controller.NewAdminController()
+	loanController := loan_controller.NewLoanController(s.Loan)
+	walletController := wallet_controller.NewWalletController(s.Wallet)
+	chatController := chat_controller.NewChatController(s.ChatHub)
+	profileController := user_profile_controller.NewUserProfileController(s.Profile)
+	
+	// 👇 NEW: Initialize Payment Controller
+	paymentController := payment_controller.NewPaymentController(s.Payment, r.Payment)
+
+	// Setup Routes
 	routes.SetupAuthRoutes(api, authController)
 	routes.SetupConsultationRoutes(api, consultationController)
 	routes.SetupAdminRoutes(api, adminController)
@@ -97,4 +145,7 @@ func SetupApp(app *fiber.App) {
 	routes.SetupWalletRoutes(api, walletController)
 	routes.SetupChatRoutes(api, chatController)
 	routes.SetupUserProfileRoutes(api, profileController)
+	
+	// 👇 NEW: Setup Payment Routes
+	routes.SetupPaymentRoutes(api, paymentController)
 }

@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"errors"
+	"time" // 👈 Added for Cron date comparisons
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -19,6 +20,14 @@ var (
 type LoanRepository interface {
 	CreateApplication(loan *models.LoanApplication) error
 	DisburseLoanTx(loanID uuid.UUID) error
+
+	// Background Worker Queries
+	GetLoanByID(loanID uuid.UUID) (*models.LoanApplication, error)
+	CreateEMISchedules(schedules []models.EMISchedule) error
+
+	// 👇 NEW: Cronjob Queries
+	GetDueEMIs(today time.Time) ([]models.EMISchedule, error)
+	UpdateEMIStatus(emiID uuid.UUID, status string) error
 }
 
 type loanRepositoryImpl struct {
@@ -106,4 +115,36 @@ func (r *loanRepositoryImpl) DisburseLoanTx(loanID uuid.UUID) error {
 		// 6. Advance State Machine
 		return tx.Model(&loan).UpdateColumn("application_status", "APPROVED").Error
 	})
+}
+
+// ==========================================
+// EMI BACKGROUND WORKER QUERIES
+// ==========================================
+
+func (r *loanRepositoryImpl) GetLoanByID(loanID uuid.UUID) (*models.LoanApplication, error) {
+	var loan models.LoanApplication
+	if err := r.db.Where("id = ?", loanID).First(&loan).Error; err != nil {
+		return nil, err
+	}
+	return &loan, nil
+}
+
+func (r *loanRepositoryImpl) CreateEMISchedules(schedules []models.EMISchedule) error {
+	return r.db.Create(&schedules).Error
+}
+
+// ==========================================
+// 👇 NEW: CRONJOB EMI CHECKER QUERIES 👇
+// ==========================================
+
+// GetDueEMIs finds all unpaid EMIs where the due date is today or earlier
+func (r *loanRepositoryImpl) GetDueEMIs(today time.Time) ([]models.EMISchedule, error) {
+	var emis []models.EMISchedule
+	err := r.db.Where("status = ? AND due_date <= ?", "PENDING", today).Find(&emis).Error
+	return emis, err
+}
+
+// UpdateEMIStatus changes an EMI from PENDING to PAID or OVERDUE
+func (r *loanRepositoryImpl) UpdateEMIStatus(emiID uuid.UUID, status string) error {
+	return r.db.Model(&models.EMISchedule{}).Where("id = ?", emiID).Update("status", status).Error
 }

@@ -9,7 +9,7 @@ import (
 
 	"lendogo-backend/internal/repositories"
 	"lendogo-backend/structures/dto"
-	"lendogo-backend/utils" // 👈 Your utils package (for Razorpay AND Kafka)
+	"lendogo-backend/utils"
 
 	"github.com/google/uuid"
 )
@@ -30,14 +30,14 @@ type WalletService interface {
 // 👇 1. ADDED THE PRODUCER TO THE STRUCT
 type walletServiceImpl struct {
 	repo     repositories.WalletRepository
-	producer *utils.KafkaProducer 
+	producer *utils.KafkaProducer
 }
 
 // 👇 2. UPDATED THE CONSTRUCTOR TO REQUIRE THE PRODUCER
 func NewWalletService(repo repositories.WalletRepository, producer *utils.KafkaProducer) WalletService {
 	return &walletServiceImpl{
 		repo:     repo,
-		producer: producer, 
+		producer: producer,
 	}
 }
 
@@ -120,7 +120,30 @@ func (s *walletServiceImpl) ProcessDisbursal(req dto.DisburseLoanRequest) error 
 	}
 
 	// 3. Delegate to Repository for the ACID Transaction execution
-	return s.repo.ExecuteDisbursal(loanUUID, userUUID, req.NetPayout)
+	// 👇 WE CATCH THE ERROR HERE FIRST! 👇
+	err = s.repo.ExecuteDisbursal(loanUUID, userUUID, req.NetPayout)
+	if err != nil {
+		return err // If the database fails or rolls back, WE STOP HERE. No Kafka event is sent!
+	}
+
+	// 👇 4. KAFKA TRIGGER: BLAST THE EVENT AFTER SUCCESSFUL DISBURSAL! 👇
+	payload := map[string]interface{}{
+		"loan_id":   req.LoanID,
+		"user_id":   req.UserID,
+		"amount":    req.NetPayout,
+		"status":    "DISBURSED",
+		"timestamp": time.Now().Unix(),
+	}
+
+	kafkaErr := s.producer.PublishEvent(context.Background(), "telemetry.loans", "LOAN_DISBURSED", payload)
+	if kafkaErr != nil {
+		fmt.Println("❌ KAFKA ERROR: Failed to publish loan disbursal event:", kafkaErr)
+	} else {
+		fmt.Println("🚀 KAFKA EVENT PUBLISHED: LOAN_DISBURSED")
+	}
+	// 👆 END OF KAFKA TRIGGER 👆
+
+	return nil // Return success!
 }
 
 // ==========================================

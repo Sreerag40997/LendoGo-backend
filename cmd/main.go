@@ -52,7 +52,8 @@ func main() {
 		&models.ChatMessage{},
 		&models.UserWallet{},
 		&models.LedgerEntry{},
-		&models.UserProfile{}, // 👈 Successfully added for profile metrics!
+		&models.UserProfile{},
+		&models.EMISchedule{}, // 👈 Successfully added for profile metrics!
 	)
 
 	log.Println("Running Seeders...")

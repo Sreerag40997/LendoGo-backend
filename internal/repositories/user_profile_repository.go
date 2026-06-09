@@ -1,7 +1,6 @@
 package repositories
 
 import (
-	"errors"
 	"lendogo-backend/structures/models"
 
 	"github.com/google/uuid"
@@ -26,15 +25,18 @@ func (r *userProfileRepoImpl) GetProfile(userID uuid.UUID) (*models.UserProfile,
 	var user models.User
 
 	// Get Auth User details (for full name and email)
+	// We keep .First() here because if the core User doesn't exist, the JWT is invalid and it IS an actual error!
 	if err := r.db.Where("id = ?", userID).First(&user).Error; err != nil {
 		return nil, nil, err
 	}
 
-	// Get Profile details (If not found, we just return empty profile without error)
-	err := r.db.Where("user_id = ?", userID).First(&profile).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil, err
+	// 👇 FIX: Use .Limit(1).Find() to silently fetch the profile without GORM error logs
+	result := r.db.Where("user_id = ?", userID).Limit(1).Find(&profile)
+	if result.Error != nil {
+		return nil, nil, result.Error
 	}
+	
+	// If result.RowsAffected == 0, 'profile' remains an empty struct, which is exactly what we want!
 
 	return &profile, &user, nil
 }
@@ -50,14 +52,18 @@ func (r *userProfileRepoImpl) UpsertProfile(userID uuid.UUID, profile models.Use
 
 		// 2. Check if profile exists
 		var existing models.UserProfile
-		err := tx.Where("user_id = ?", userID).First(&existing).Error
+		
+		// 👇 FIX: Use .Limit(1).Find() here as well!
+		result := tx.Where("user_id = ?", userID).Limit(1).Find(&existing)
 
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// Create new
+		if result.Error != nil {
+			return result.Error // A real database connection error
+		}
+
+		if result.RowsAffected == 0 {
+			// No profile found! Create new.
 			profile.UserID = userID
 			return tx.Create(&profile).Error
-		} else if err != nil {
-			return err
 		}
 
 		// 3. Update existing profile (keeping old image if a new one wasn't uploaded)
