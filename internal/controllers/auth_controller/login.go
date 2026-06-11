@@ -2,6 +2,7 @@ package auth_controller
 
 import (
 	"time" 
+	"strings"
 	"github.com/gofiber/fiber/v2"
 	"lendogo-backend/structures/dto"
 )
@@ -16,6 +17,10 @@ func (c *AuthController) Login(ctx *fiber.Ctx) error {
 			"error": "Invalid request body",
 		})
 	}
+
+	// Trim any accidental spaces from copy/pasting
+	req.Email = strings.TrimSpace(req.Email)
+	req.Password = strings.TrimSpace(req.Password)
 
 	// Step 2: Pass to Service layer (DI is perfectly maintained here!)
 	// The service knows nothing about HTTP or cookies, just business logic.

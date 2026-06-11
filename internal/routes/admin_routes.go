@@ -2,34 +2,44 @@ package routes
 
 import (
 	"github.com/gofiber/fiber/v2"
-
-	// Using the unified controllers package we just fixed!
-	controllers "lendogo-backend/internal/controllers/admin_controller"
+	"lendogo-backend/internal/controllers/admin_controller"
 	"lendogo-backend/internal/middlewares"
 )
 
-// SetupAdminRoutes locks down and routes all admin traffic
-func SetupAdminRoutes(api fiber.Router, adminCtrl *controllers.AdminController) {
-	// 1. Create a specific group for admin features
+func SetupAdminRoutes(api fiber.Router, adminCtrl *admin_controller.AdminController) {
 	adminGroup := api.Group("/admin")
-
-	// 2. Apply BOTH middlewares to everything inside this group!
-	// (This guarantees nobody gets in without an Admin JWT)
+	
+	// 1. Base Security: Must be logged in AND be an Admin type
 	adminGroup.Use(middlewares.Protected(), middlewares.AdminOnly())
 
-	// 3. Your existing admin routes
-	adminGroup.Get("/all-users", adminCtrl.GetAllUsers)
-	adminGroup.Get("/system-stats", adminCtrl.GetSystemStats)
-
 	// ==========================================
-	// 4. NEW: Loan Application Management
+	// USER MANAGEMENT (Locked to "user_management")
 	// ==========================================
-	// Fetches all loans + KYC + Financials in one big payload
-	adminGroup.Get("/applications", adminCtrl.GetAllApplications)
+	adminGroup.Get("/all-users", middlewares.RequirePermission("user_management"), adminCtrl.GetAllUsers)
+	adminGroup.Post("/users", middlewares.RequirePermission("user_management"), adminCtrl.CreateUser)
+	adminGroup.Put("/users/:id", middlewares.RequirePermission("user_management"), adminCtrl.UpdateUser)
+	adminGroup.Delete("/users/:id", middlewares.RequirePermission("user_management"), adminCtrl.DeleteUser)
+	adminGroup.Patch("/users/:id/status", middlewares.RequirePermission("user_management"), adminCtrl.UpdateUserStatus)
 	
-	// Mutates the status (UNDER_REVIEW -> APPROVED/REJECTED)
-	adminGroup.Patch("/applications/:id/status", adminCtrl.UpdateApplicationStatus)
+	// ==========================================
+	// LOAN APPLICATIONS (Locked to "loan_applications")
+	// ==========================================
+	adminGroup.Get("/applications", middlewares.RequirePermission("loan_applications"), adminCtrl.GetAllApplications)
+	adminGroup.Patch("/applications/:id/status", middlewares.RequirePermission("loan_applications"), adminCtrl.UpdateApplicationStatus)
 
-	// Fetches all free consultation requests from database
-	adminGroup.Get("/consultations", adminCtrl.GetAllConsultations)
+	// ==========================================
+	// SYSTEM DASHBOARD (Locked to "dashboard")
+	// ==========================================
+	adminGroup.Get("/system-stats", middlewares.RequirePermission("dashboard"), adminCtrl.GetSystemStats)
+
+	// ==========================================
+	// CUSTOMER CARE (Locked to "customer_care")
+	// ==========================================
+	adminGroup.Get("/consultations", middlewares.RequirePermission("customer_care"), adminCtrl.GetAllConsultations)
+
+	// ==========================================
+	// STAFF MANAGEMENT 
+	// ==========================================
+	adminGroup.Post("/staff", middlewares.RequirePermission("user_management"), adminCtrl.CreateStaff)
+	adminGroup.Get("/staff", middlewares.RequirePermission("user_management"), adminCtrl.GetAllStaff)
 }

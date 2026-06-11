@@ -24,7 +24,7 @@ func main() {
 	fiberApp.Use(cors.New(cors.Config{
 		AllowOrigins:     "http://localhost:5173",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
-		AllowCredentials: true, // 👈 CRITICAL: Must be true for httpOnly cookies to work!
+		AllowCredentials: true,
 	}))
 
 	// ==========================================
@@ -53,23 +53,22 @@ func main() {
 		&models.UserWallet{},
 		&models.LedgerEntry{},
 		&models.UserProfile{},
-		&models.EMISchedule{}, // 👈 Successfully added for profile metrics!
+		&models.EMISchedule{},
+		&models.Staff{},
 	)
 
 	log.Println("Running Seeders...")
-	database.SeedAdmin()
 	database.RunSeeders()
 
 	// ==========================================
 	// 5. STATIC STORAGE ROUTE
 	// ==========================================
-	// 👇 CRITICAL: Enables React to fetch images via http://localhost:8080/uploads/profiles/...
 	fiberApp.Static("/uploads", "./uploads")
 
 	// ==========================================
 	// 6. WIRING & STARTUP
 	// ==========================================
-	
+
 	// Call your app.go hub to wire everything together
 	app.SetupApp(fiberApp)
 

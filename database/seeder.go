@@ -26,16 +26,6 @@ func RunSeeders() {
 func SeedAdmin() {
 	var adminCount int64
 
-	// 1. Check if ANY admin already exists in the database
-	DB.Model(&models.User{}).Where("role = ?", "admin").Count(&adminCount)
-
-	if adminCount > 0 {
-		// An admin already exists, we don't need to do anything.
-		return
-	}
-
-	log.Println("No admin found. Creating default master admin account...")
-
 	// 2. Read the credentials from your .env file
 	adminEmail := os.Getenv("ADMIN_EMAIL")
 	adminPassword := os.Getenv("ADMIN_PASSWORD")
@@ -44,6 +34,18 @@ func SeedAdmin() {
 		log.Println("⚠️ WARNING: ADMIN_EMAIL or ADMIN_PASSWORD is not set in .env. Skipping admin creation.")
 		return
 	}
+
+	// 1. Check if ANY admin already exists in the database by email
+	DB.Model(&models.User{}).Where("email = ?", adminEmail).Count(&adminCount)
+
+	if adminCount > 0 {
+		// An admin already exists, we don't need to do anything.
+		return
+	}
+
+	log.Println("No admin found. Creating default master admin account...")
+
+
 
 	// 3. Hash the password securely using your existing util
 	hashedPassword, err := utils.HashPassword(adminPassword)
@@ -61,10 +63,10 @@ func SeedAdmin() {
 
 	// 5. Save to the database
 	if err := DB.Create(&adminUser).Error; err != nil {
-		log.Fatal("Failed to seed admin user: ", err)
+		log.Printf("⚠️ Warning: Failed to seed admin user: %v\n", err)
+	} else {
+		log.Println("✅ Default Admin account created successfully!")
 	}
-
-	log.Println("✅ Default Admin account created successfully!")
 }
 
 // seedSystemWallet ensures the Master Capital Ledger exists for Admin disbursements
