@@ -105,6 +105,28 @@ func (c *AuthController) SetPassword(ctx *fiber.Ctx) error {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	// 🚀 AUTOMATIC LOGIN ON SUCCESSFUL REGISTRATION 🚀
+	loginRes, loginErr := c.authService.Login(dto.LoginReq{
+		Email:    req.Email,
+		Password: req.Password,
+	})
+	if loginErr == nil && loginRes != nil {
+		cookie := new(fiber.Cookie)
+		cookie.Name = "access_token"
+		cookie.Value = loginRes.Token
+		cookie.Expires = time.Now().Add(24 * time.Hour)
+		cookie.HTTPOnly = true
+		cookie.Secure = false
+		cookie.SameSite = "lax"
+		ctx.Cookie(cookie)
+
+		return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
+			"message": "Registration and login complete!",
+			"data":    loginRes.User,
+			"token":   loginRes.Token,
+		})
+	}
+
 	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message": "Registration complete!",
 	})

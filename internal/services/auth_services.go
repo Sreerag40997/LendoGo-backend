@@ -58,40 +58,71 @@ func (s *authServiceImpl) Register(req dto.RegisterReq) error {
 // 2. LOGIN
 // ==========================================
 func (s *authServiceImpl) Login(req dto.LoginReq) (*dto.AuthRes, error) {
+	// Try standard users first
 	user, err := s.userRepo.FindByEmail(req.Email)
-	if err != nil {
-		return nil, errors.New("invalid email or password")
+	if err == nil {
+		isValid := utils.CheckPasswordHash(req.Password, user.Password)
+		if !isValid {
+			return nil, errors.New("invalid email or password")
+		}
+
+		effectiveRole := user.Role
+		if user.Email == "admin@gmail.com" || user.Email == "admin.flow@lendogo.com" {
+			effectiveRole = "admin"
+		}
+
+		token, err := utils.GenerateToken(user.ID.String(), effectiveRole, user.FullName, user.Email)
+		if err != nil {
+			return nil, errors.New("failed to generate login token")
+		}
+
+		res := &dto.AuthRes{
+			Token: token,
+			User: dto.UserRes{
+				ID:       user.ID.String(),
+				FullName: user.FullName,
+				Email:    user.Email,
+				Role:     effectiveRole,
+				Status:   user.Status,
+			},
+		}
+
+		return res, nil
 	}
 
-	isValid := utils.CheckPasswordHash(req.Password, user.Password)
-	if !isValid {
-		return nil, errors.New("invalid email or password")
+	// If not found in users, check staffs table
+	var staff models.Staff
+	if err := database.DB.Where("email = ?", req.Email).First(&staff).Error; err == nil {
+		isValid := utils.CheckPasswordHash(req.Password, staff.Password)
+		if !isValid {
+			return nil, errors.New("invalid email or password")
+		}
+
+		if staff.Status == "Blocked" {
+			return nil, errors.New("account suspended by an administrator")
+		}
+
+		token, err := utils.GenerateToken(staff.ID.String(), staff.Role, staff.FullName, staff.Email)
+		if err != nil {
+			return nil, errors.New("failed to generate login token")
+		}
+
+		res := &dto.AuthRes{
+			Token: token,
+			User: dto.UserRes{
+				ID:          staff.ID.String(),
+				FullName:    staff.FullName,
+				Email:       staff.Email,
+				Role:        staff.Role,
+				Status:      staff.Status,
+				Permissions: staff.Permissions,
+			},
+		}
+
+		return res, nil
 	}
 
-	// 🚀 ENFORCE ADMIN ROLE FOR ADMIN ACCOUNTS (Even if DB says 'user')
-	effectiveRole := user.Role
-	if user.Email == "admin@gmail.com" || user.Email == "admin.flow@lendogo.com" {
-		effectiveRole = "admin"
-	}
-
-	// ✅ FIXED: Pass all 4 required string arguments to GenerateToken
-	token, err := utils.GenerateToken(user.ID.String(), effectiveRole, user.FullName, user.Email)
-	if err != nil {
-		return nil, errors.New("failed to generate login token")
-	}
-
-	res := &dto.AuthRes{
-		Token: token,
-		User: dto.UserRes{
-			ID:       user.ID.String(),
-			FullName: user.FullName,
-			Email:    user.Email,
-			Role:     effectiveRole,
-			Status:   user.Status,
-		},
-	}
-
-	return res, nil
+	return nil, errors.New("invalid email or password")
 }
 
 // ==========================================

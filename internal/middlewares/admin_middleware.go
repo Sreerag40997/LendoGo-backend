@@ -13,11 +13,11 @@ func AdminOnly() fiber.Handler {
 		role := c.Locals("role")
 		fmt.Printf("\n[DEBUG] Token Role is: '%v'\n", role)
 
-		// 2. If the role is missing or NOT 'admin', kick them out!
-		if role != "admin" {
-			// 403 Forbidden is the correct HTTP status for "I know who you are, but you don't have permission"
+		// 2. If the role is missing or 'user', kick them out!
+		if role == nil || role == "user" {
+			// 403 Forbidden is the correct HTTP status
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error": "Access denied. Admin privileges required.",
+				"error": "Access denied. Admin or Staff privileges required.",
 			})
 		}
 

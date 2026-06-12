@@ -11,7 +11,7 @@ func LoadConfig() {
 	// This looks for the .env file in the root folder
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("❌ CRITICAL: No .env file found! The server cannot start securely.")
+		log.Fatal("CRITICAL: No .env file found! The server cannot start securely.")
 	}
 }
 

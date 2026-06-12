@@ -35,11 +35,12 @@ type LoginReq struct {
 
 // UserRes handles the JSON structure for the user in the response
 type UserRes struct {
-    ID       string `json:"id"` // Changed to string for UUID compatibility
-    FullName string `json:"full_name"`
-    Email    string `json:"email"`
-    Role     string `json:"role"` 
-    Status    string    `json:"status"`
+    ID          string          `json:"id"` // Changed to string for UUID compatibility
+    FullName    string          `json:"full_name"`
+    Email       string          `json:"email"`
+    Role        string          `json:"role"` 
+    Status      string          `json:"status"`
+    Permissions map[string]bool `json:"permissions,omitempty"`
 }
 
 type AuthRes struct {

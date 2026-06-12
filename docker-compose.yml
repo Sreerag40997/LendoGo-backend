@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   # 1. Your Golang API
   api:
@@ -11,17 +13,17 @@ services:
     depends_on:
       - postgres
       - redis
+      - kafka
 
   # 2. PostgreSQL Database (For your Users)
-# 2. PostgreSQL Database (For your Users)
   postgres:
     image: postgres:15-alpine
     ports:
       - "5433:5432"
     environment:
-      POSTGRES_USER: ${DB_USER}         # <--- Pulls from .env
-      POSTGRES_PASSWORD: ${DB_PASSWORD} # <--- Pulls from .env
-      POSTGRES_DB: ${DB_NAME}           # <--- Pulls from .env
+      POSTGRES_USER: ${DB_USER}         
+      POSTGRES_PASSWORD: ${DB_PASSWORD} 
+      POSTGRES_DB: ${DB_NAME}           
     volumes:
       - pgdata:/var/lib/postgresql/data
 
@@ -30,6 +32,33 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+
+  # 4. Zookeeper (Manages Kafka cluster state)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: lendogo-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  # 5. Apache Kafka Broker
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: lendogo-kafka
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # Configures dual listeners: internal for docker network, external for your host machine
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
 # This saves your database data so it doesn't wipe out when you restart
 volumes:

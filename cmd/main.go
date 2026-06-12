@@ -24,7 +24,7 @@ func main() {
 	fiberApp.Use(cors.New(cors.Config{
 		AllowOrigins:     "http://localhost:5173",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
-		AllowCredentials: true, // 👈 CRITICAL: Must be true for httpOnly cookies to work!
+		AllowCredentials: true,
 	}))
 
 	// ==========================================
@@ -42,27 +42,36 @@ func main() {
 	// 4. MIGRATIONS & SEEDING
 	// ==========================================
 	log.Println("Running Database Migrations...")
-	// Tip: You can pass multiple models into AutoMigrate at once!
-	// database.DB.AutoMigrate(&models.User{}, &models.Consultation{})
-	database.DB.AutoMigrate(&models.User{},
-		 &models.Consultation{},
-		 &models.LoanApplication{},
-		 &models.KYCDocuments{},     
-        &models.FinancialDetails{},
+	database.DB.AutoMigrate(
+		&models.User{},
+		&models.Consultation{},
+		&models.LoanApplication{},
+		&models.KYCDocuments{},
+		&models.FinancialDetails{},
 		&models.SystemWallet{},
-		&models.ChatMessage{},) 
-	
+		&models.ChatMessage{},
+		&models.UserWallet{},
+		&models.LedgerEntry{},
+		&models.UserProfile{},
+		&models.EMISchedule{},
+		&models.Staff{},
+	)
+
 	log.Println("Running Seeders...")
-	database.SeedAdmin()
 	database.RunSeeders()
 
 	// ==========================================
-	// 5. WIRING & STARTUP
+	// 5. STATIC STORAGE ROUTE
 	// ==========================================
-	
-	// Call your new app.go hub to wire everything together
+	fiberApp.Static("/uploads", "./uploads")
+
+	// ==========================================
+	// 6. WIRING & STARTUP
+	// ==========================================
+
+	// Call your app.go hub to wire everything together
 	app.SetupApp(fiberApp)
 
-	log.Println("🚀 Fiber Server running on port 8080...")
+	log.Println("Fiber Server running on port 8080...")
 	log.Fatal(fiberApp.Listen(":8080"))
 }
