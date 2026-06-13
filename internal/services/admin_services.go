@@ -53,6 +53,8 @@ type AdminService interface {
 	CreateStaff(req CreateStaffDTO) error
 	GetAllStaff() ([]models.Staff, error)
 	AdminLogin(email string, password string) (*models.Staff, error)
+	DeleteStaff(staffIDStr string) error
+	UpdateStaffStatus(id string, status string) error
 }
 
 type adminServiceImpl struct {
@@ -102,6 +104,18 @@ func (s *adminServiceImpl) GetAllStaff() ([]models.Staff, error) {
 	return s.repo.GetAllStaff()
 }
 
+func (s *adminServiceImpl) DeleteStaff(staffIDStr string) error {
+	staffID, err := uuid.Parse(staffIDStr)
+	if err != nil {
+		return err
+	}
+	return s.repo.HardDeleteStaff(staffID)
+}
+
+func (s *adminServiceImpl) UpdateStaffStatus(id string, status string) error {
+	return s.repo.UpdateStaffStatus(id, status)
+}
+
 // ==========================================
 // 4. USER MANAGEMENT LOGIC
 // ==========================================
@@ -141,7 +155,7 @@ func (s *adminServiceImpl) DeleteUser(userIDStr string) error {
 	if err != nil {
 		return err
 	}
-	return s.repo.SoftDeleteUser(userID)
+	return s.repo.HardDeleteUser(userID)
 }
 
 func (s *adminServiceImpl) UpdateUserStatus(id string, status string) error {

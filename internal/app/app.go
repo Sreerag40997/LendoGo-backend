@@ -23,10 +23,14 @@
 		"lendogo-backend/internal/routes"
 		"lendogo-backend/internal/services"
 		"lendogo-backend/utils"
+		"lendogo-backend/internal/websockets"
 	)
 
 	// SetupApp is now incredibly clean. You can read it like a book!
 	func SetupApp(app *fiber.App) {
+		// Start the Admin Broadcast Hub
+		go websockets.StartHub()
+
 		// 1. Setup Infrastructure
 		kafkaProducer := setupKafka()
 

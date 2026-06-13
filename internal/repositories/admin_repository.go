@@ -14,13 +14,15 @@ type AdminRepository interface {
     GetAllUsers() ([]models.User, error)
     CreateSystemUserTx(user *models.User, profile *models.UserProfile) error
     UpdateUser(id string, updates map[string]interface{}) error
-    SoftDeleteUser(userID uuid.UUID) error
+    HardDeleteUser(userID uuid.UUID) error
     UpdateUserStatus(id string, status string) error
 
     // --- STAFF MANAGEMENT (Internal Employees) ---
     CreateStaff(staff *models.Staff) error
     GetAllStaff() ([]models.Staff, error)
     GetStaffByEmail(email string) (*models.Staff, error) // 👈 ADDED for Login functionality
+    HardDeleteStaff(staffID uuid.UUID) error
+    UpdateStaffStatus(id string, status string) error
 }
 
 type adminRepoImpl struct {
@@ -58,8 +60,8 @@ func (r *adminRepoImpl) UpdateUser(id string, updates map[string]interface{}) er
     return r.db.Model(&models.User{}).Where("id = ?", id).Updates(updates).Error
 }
 
-func (r *adminRepoImpl) SoftDeleteUser(userID uuid.UUID) error {
-    result := r.db.Where("id = ?", userID).Delete(&models.User{})
+func (r *adminRepoImpl) HardDeleteUser(userID uuid.UUID) error {
+    result := r.db.Unscoped().Where("id = ?", userID).Delete(&models.User{})
     if result.Error != nil {
         return result.Error
     }
@@ -95,4 +97,19 @@ func (r *adminRepoImpl) GetStaffByEmail(email string) (*models.Staff, error) {
         return nil, err
     }
     return &staff, nil
+}
+
+func (r *adminRepoImpl) HardDeleteStaff(staffID uuid.UUID) error {
+    result := r.db.Unscoped().Where("id = ?", staffID).Delete(&models.Staff{})
+    if result.Error != nil {
+        return result.Error
+    }
+    if result.RowsAffected == 0 {
+        return errors.New("staff not found")
+    }
+    return nil
+}
+
+func (r *adminRepoImpl) UpdateStaffStatus(id string, status string) error {
+    return r.db.Exec("UPDATE staffs SET status = ? WHERE id = ?", status, id).Error
 }

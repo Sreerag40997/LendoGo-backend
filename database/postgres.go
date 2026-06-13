@@ -2,51 +2,52 @@ package database
 
 import (
 	"fmt"
-	"lendogo-backend/structures/models"
 	"log"
-	"os"
-
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"lendogo-backend/config" 
+	"lendogo-backend/structures/models"
 )
 
-	var DB *gorm.DB
+var DB *gorm.DB
 
-	// Connect initializes the DB and returns an error if anything goes wrong
-	func Connect() error {
-		// 1. Fetch variables
-		host := os.Getenv("DB_HOST")
-		port := os.Getenv("DB_PORT")
-		user := os.Getenv("DB_USER")
-		dbname := os.Getenv("DB_NAME")
-		password := os.Getenv("DB_PASSWORD")
-
-		// 2. ERROR HANDLING: Check for missing critical variables
-		if host == "" || port == "" || user == "" || dbname == "" {
-			return fmt.Errorf("CRITICAL: Missing database environment variables in .env")
-		}
-
-		// 3. Build connection string safely
-		dsn := fmt.Sprintf(
-			"host=%s port=%s user=%s dbname=%s password=%s sslmode=disable TimeZone=Asia/Kolkata",
-			host, port, user, dbname, password,
-		)
-
-		// 4. Open Connection
-		db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-		if err != nil {
-			// We return the error wrapped with helpful context, we DON'T use log.Fatal here!
-			return fmt.Errorf("failed to connect to PostgreSQL: %w", err)
-		}
-
-		// 5. Auto Migrate
-		err = db.AutoMigrate(&models.User{})
-		if err != nil {
-			return fmt.Errorf("failed to run database migrations: %w", err)
-		}
-
-		// 6. Success! Assign to global variable and return nil (no error)
-		DB = db
-		log.Println("✅ PostgreSQL connected and migrated successfully!")
-		return nil
+func Connect() error {
+	host := config.GetEnv("DB_HOST", "localhost")
+	port := config.GetEnv("DB_PORT", "5432")
+	user := config.GetEnv("DB_USER", "postgres")
+	dbname := config.GetEnv("DB_NAME", "lendogo")
+	password := config.GetEnv("DB_PASSWORD", "")
+	if host == "" || port == "" || user == "" || dbname == "" {
+		return fmt.Errorf("CRITICAL: Missing database environment variables")
 	}
+	dsn := fmt.Sprintf(
+		"host=%s port=%s user=%s dbname=%s password=%s sslmode=disable TimeZone=Asia/Kolkata",
+		host, port, user, dbname, password,
+	)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return fmt.Errorf("failed to connect to PostgreSQL: %w", err)
+	}
+	log.Println("Running Database Migrations...")
+	err = db.AutoMigrate(
+		&models.User{},
+		&models.Consultation{},
+		&models.LoanApplication{},
+		&models.KYCDocuments{},
+		&models.FinancialDetails{},
+		&models.SystemWallet{},
+		&models.ChatMessage{},
+		&models.UserWallet{},
+		&models.LedgerEntry{},
+		&models.UserProfile{},
+		&models.EMISchedule{},
+		&models.Staff{},
+		&models.AuditLog{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to run database migrations: %w", err)
+	}
+	DB = db
+	log.Println("PostgreSQL connected and all tables migrated successfully!")
+	return nil
+}

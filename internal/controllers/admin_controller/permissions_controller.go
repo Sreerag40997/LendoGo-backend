@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"github.com/gofiber/fiber/v2"
 	"lendogo-backend/database"
+	"lendogo-backend/utils"
+	"lendogo-backend/internal/websockets"
 )
 
 // GetGlobalPermissions fetches the global RBAC toggles from Redis
@@ -31,6 +33,14 @@ func (c *AdminController) UpdateGlobalPermissions(ctx *fiber.Ctx) error {
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to save global permissions"})
 	}
+
+	// 🔴 WEBSOCKET BROADCAST
+	websockets.BroadcastMessage("GLOBAL_PERMISSIONS_UPDATED", fiber.Map{
+		"permissions": payload.Permissions,
+	})
+
+	actorID, actorName := getActor(ctx)
+	utils.RecordAudit(actorID, actorName, "WARNING", "System", "global_ui", "Updated Global RBAC Permissions", ctx.IP())
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"message": "Global permissions updated successfully"})
 }

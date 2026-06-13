@@ -2,8 +2,10 @@ package routes
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/websocket/v2"
 	"lendogo-backend/internal/controllers/admin_controller"
 	"lendogo-backend/internal/middlewares"
+	"lendogo-backend/internal/websockets"
 )
 
 func SetupAdminRoutes(api fiber.Router, adminCtrl *admin_controller.AdminController) {
@@ -11,6 +13,26 @@ func SetupAdminRoutes(api fiber.Router, adminCtrl *admin_controller.AdminControl
 	
 	// 👇 PUBLIC ROUTE: Unprotected so staff can actually log in!
 	adminGroup.Post("/login", adminCtrl.AdminLogin)
+
+	// WebSocket endpoint for admin live broadcasts
+	adminGroup.Get("/ws", websocket.New(func(c *websocket.Conn) {
+		websockets.Mutex.Lock()
+		websockets.Clients[c] = true
+		websockets.Mutex.Unlock()
+
+		defer func() {
+			websockets.Mutex.Lock()
+			delete(websockets.Clients, c)
+			websockets.Mutex.Unlock()
+			c.Close()
+		}()
+
+		for {
+			if _, _, err := c.ReadMessage(); err != nil {
+				break
+			}
+		}
+	}))
 
 	// ==========================================
 	// THE VAULT DOOR: Everything below this line requires a valid Admin JWT
@@ -66,4 +88,22 @@ func SetupAdminRoutes(api fiber.Router, adminCtrl *admin_controller.AdminControl
 	// Tied to User Management toggles (or you can make specific "staff.create" toggles later)
 	adminGroup.Post("/staff", middlewares.RequirePermission("users.create"), adminCtrl.CreateStaff)
 	adminGroup.Get("/staff", middlewares.RequirePermission("users.read"), adminCtrl.GetAllStaff)
+	adminGroup.Delete("/staff/:id", middlewares.RequirePermission("users.delete"), adminCtrl.DeleteStaff)
+	adminGroup.Patch("/staff/:id/status", middlewares.RequirePermission("users.update"), adminCtrl.UpdateStaffStatus)
+
+	// ==========================================
+	// COMPLIANCE & AUDIT LOGS
+	// ==========================================
+	// Tied to an "audit.read" toggle in your UI so only authorized staff can see the paper trail
+	adminGroup.Get("/audit-logs", middlewares.RequirePermission("audit.read"), adminCtrl.GetAuditLogs)
 }
+
+
+
+
+
+
+
+
+
+

@@ -40,6 +40,7 @@ func Protected() fiber.Handler {
 
         if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
             ctx.Locals("user_id", claims["user_id"])
+            ctx.Locals("name", claims["name"])
             ctx.Locals("role", claims["role"]) 
             return ctx.Next()
         }

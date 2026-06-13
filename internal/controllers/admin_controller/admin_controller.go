@@ -16,6 +16,7 @@ import (
 	"lendogo-backend/database"
 	"lendogo-backend/internal/services" 
 	"lendogo-backend/structures/models"
+	"lendogo-backend/utils"
 	
 	// 👇 THE MAGIC IMPORT
 	"lendogo-backend/internal/websockets" 
@@ -29,6 +30,16 @@ type AdminController struct {
 // NewAdminController initializes a new AdminController.
 func NewAdminController(as services.AdminService) *AdminController {
 	return &AdminController{adminService: as}
+}
+
+func getActor(ctx *fiber.Ctx) (uuid.UUID, string) {
+	userIdStr, _ := ctx.Locals("user_id").(string)
+	actorID, _ := uuid.Parse(userIdStr)
+	actorName, _ := ctx.Locals("name").(string)
+	if actorName == "" {
+		actorName = "System Admin"
+	}
+	return actorID, actorName
 }
 
 // ==========================================
@@ -53,6 +64,7 @@ func (c *AdminController) AdminLogin(ctx *fiber.Ctx) error {
 
 	claims := jwt.MapClaims{
 		"user_id": staff.ID.String(),
+		"name":    staff.FullName,
 		"role":    "admin", 
 		"exp":     time.Now().Add(time.Hour * 24).Unix(), 
 	}
@@ -100,6 +112,9 @@ func (c *AdminController) CreateStaff(ctx *fiber.Ctx) error {
 		"email":   req.Email,
 	})
 
+	actorID, actorName := getActor(ctx)
+	utils.RecordAudit(actorID, actorName, "SUCCESS", "Staff", "", "Created new staff account for "+req.Email, ctx.IP())
+
 	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "Staff account provisioned successfully!"})
 }
 
@@ -109,6 +124,54 @@ func (c *AdminController) GetAllStaff(ctx *fiber.Ctx) error {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch staff directory"})
 	}
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"message": "Staff directory fetched", "data": staff})
+}
+
+func (c *AdminController) DeleteStaff(ctx *fiber.Ctx) error {
+	id := ctx.Params("id")
+
+	if err := c.adminService.DeleteStaff(id); err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete staff account"})
+	}
+
+	// 🔴 WEBSOCKET BROADCAST
+	websockets.BroadcastMessage("STAFF_DELETED", fiber.Map{
+		"staff_id": id,
+	})
+
+	actorID, actorName := getActor(ctx)
+	utils.RecordAudit(actorID, actorName, "WARNING", "Staff", id, "Deleted staff from system: "+id, ctx.IP())
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"message": "Staff deleted"})
+}
+
+func (c *AdminController) UpdateStaffStatus(ctx *fiber.Ctx) error {
+	id := ctx.Params("id")
+	var payload struct {
+		Status string `json:"status"`
+	}
+
+	if err := ctx.BodyParser(&payload); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
+	}
+
+	if err := c.adminService.UpdateStaffStatus(id, payload.Status); err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update staff status"})
+	}
+
+	// 🔴 WEBSOCKET BROADCAST
+	websockets.BroadcastMessage("STAFF_STATUS_UPDATED", fiber.Map{
+		"staff_id": id,
+		"status":   payload.Status,
+	})
+
+	actorID, actorName := getActor(ctx)
+	logType := "INFO"
+	if payload.Status == "Blocked" || payload.Status == "Suspended" {
+		logType = "WARNING"
+	}
+	utils.RecordAudit(actorID, actorName, logType, "Staff", id, "Updated staff status to "+payload.Status+" for "+id, ctx.IP())
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"message": "Status updated"})
 }
 
 // ==========================================
@@ -195,6 +258,9 @@ func (c *AdminController) CreateUser(ctx *fiber.Ctx) error {
 		"email":     req.Email,
 	})
 
+	actorID, actorName := getActor(ctx)
+	utils.RecordAudit(actorID, actorName, "SUCCESS", "User", userID.String(), "Created user profile for "+req.FullName, ctx.IP())
+
 	return ctx.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"message": "User created successfully!",
 		"default_password": plainPassword,
@@ -226,6 +292,9 @@ func (c *AdminController) UpdateUser(ctx *fiber.Ctx) error {
 		"message": "A user profile was updated.",
 	})
 
+	actorID, actorName := getActor(ctx)
+	utils.RecordAudit(actorID, actorName, "INFO", "User", id, "Updated user profile details for "+id, ctx.IP())
+
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"message": "User updated"})
 }
 
@@ -244,6 +313,9 @@ func (c *AdminController) DeleteUser(ctx *fiber.Ctx) error {
 		"user_id": id,
 	})
 
+	actorID, actorName := getActor(ctx)
+	utils.RecordAudit(actorID, actorName, "WARNING", "User", id, "Deleted user from system: "+id, ctx.IP())
+
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"message": "User deleted"})
 }
 
@@ -260,6 +332,13 @@ func (c *AdminController) UpdateUserStatus(ctx *fiber.Ctx) error {
 		"user_id": id,
 		"status":  payload.Status,
 	})
+
+	actorID, actorName := getActor(ctx)
+	logType := "INFO"
+	if payload.Status == "Blocked" || payload.Status == "Suspended" {
+		logType = "WARNING"
+	}
+	utils.RecordAudit(actorID, actorName, logType, "User", id, "Updated user status to "+payload.Status+" for "+id, ctx.IP())
 
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"message": "Status updated"})
 }
@@ -325,6 +404,9 @@ func (c *AdminController) UpdateApplicationStatus(ctx *fiber.Ctx) error {
 			"message": "Capital has been moved to user wallet.",
 		})
 
+		actorID, actorName := getActor(ctx)
+		utils.RecordAudit(actorID, actorName, "SUCCESS", "LoanApplication", id, "Disbursed capital for loan application: "+id, ctx.IP())
+
 		return ctx.SendStatus(fiber.StatusOK)
 	}
 
@@ -339,6 +421,15 @@ func (c *AdminController) UpdateApplicationStatus(ctx *fiber.Ctx) error {
 		"status":  payload.Status,
 	})
 
+	actorID, actorName := getActor(ctx)
+	logType := "INFO"
+	if payload.Status == "APPROVED" {
+		logType = "SUCCESS"
+	} else if payload.Status == "REJECTED" {
+		logType = "WARNING"
+	}
+	utils.RecordAudit(actorID, actorName, logType, "LoanApplication", id, "Updated loan application status to "+payload.Status+" for "+id, ctx.IP())
+
 	return ctx.SendStatus(fiber.StatusOK)
 }
 
@@ -347,4 +438,32 @@ func (c *AdminController) GetAllConsultations(ctx *fiber.Ctx) error {
 	var consultations []models.Consultation
 	database.DB.Order("created_at DESC").Find(&consultations)
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"data": consultations})
+}
+// ==========================================
+// 4. COMPLIANCE & AUDIT LOGS
+// ==========================================
+
+func (c *AdminController) GetAuditLogs(ctx *fiber.Ctx) error {
+	var logs []models.AuditLog
+	
+	// Start building the query, ordered by newest first
+	query := database.DB.Model(&models.AuditLog{}).Order("created_at DESC")
+
+	// 🔍 Advanced UI Filtering: If React sends a query parameter, apply it!
+	if actionType := ctx.Query("action_type"); actionType != "" {
+		query = query.Where("action_type = ?", actionType)
+	}
+	if actorID := ctx.Query("actor_id"); actorID != "" {
+		query = query.Where("actor_id = ?", actorID)
+	}
+
+	// Limit to the latest 500 logs to keep the API lightning fast
+	if err := query.Limit(500).Find(&logs).Error; err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch compliance audit logs"})
+	}
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Audit logs retrieved successfully",
+		"data":    logs,
+	})
 }

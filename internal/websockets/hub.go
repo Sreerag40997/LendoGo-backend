@@ -8,7 +8,7 @@ import (
 
 // Clients holds all active admin connections
 var Clients = make(map[*websocket.Conn]bool)
-var broadcast = make(chan interface{})
+var broadcast = make(chan interface{}, 100)
 var Mutex = sync.Mutex{}
 
 // StartHub listens for messages and sends them to all connected admins
