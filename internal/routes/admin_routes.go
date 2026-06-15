@@ -100,6 +100,11 @@ func SetupAdminRoutes(api fiber.Router, adminCtrl *admin_controller.AdminControl
 	// ==========================================
 	// CAREER MANAGEMENT
 	// ==========================================
+	
+	// ==========================================
+	// ADMIN PROFILE SETTINGS
+	// ==========================================
+	adminGroup.Post("/profile/avatar", adminCtrl.UpdateAdminAvatar)
 }
 
 

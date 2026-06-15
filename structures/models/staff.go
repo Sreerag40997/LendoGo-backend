@@ -12,6 +12,7 @@ type Staff struct {
 	ID          uuid.UUID       `gorm:"type:uuid;primaryKey" json:"id"`
 	FullName    string          `json:"full_name"`
 	Email       string          `json:"email" gorm:"unique"`
+	Avatar      string          `json:"avatar"`
 	Password    string          `json:"-"`
 	Role        string          `gorm:"type:varchar(50)" json:"role"`
 	Status      string          `gorm:"type:varchar(20);default:'Active'" json:"status"`

@@ -86,6 +86,7 @@ func (c *AdminController) AdminLogin(ctx *fiber.Ctx) error {
 			"id":          staff.ID,
 			"full_name":   staff.FullName,
 			"email":       staff.Email,
+			"avatar":      staff.Avatar,
 			"role":        staff.Role,
 			"permissions": staff.Permissions, 
 		},
@@ -465,5 +466,44 @@ func (c *AdminController) GetAuditLogs(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Audit logs retrieved successfully",
 		"data":    logs,
+	})
+}
+
+// ==========================================
+// 5. ADMIN PROFILE SETTINGS
+// ==========================================
+
+func (c *AdminController) UpdateAdminAvatar(ctx *fiber.Ctx) error {
+	actorID, actorName := getActor(ctx)
+
+	// 1. Get the uploaded file from the form data
+	file, err := ctx.FormFile("avatar")
+	if err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Failed to get image file"})
+	}
+
+	// 2. Upload file to AWS S3
+	s3URL, uploadErr := utils.UploadFileToS3(file)
+	if uploadErr != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to upload image to S3"})
+	}
+
+	// 3. Update the staff record in the database
+	if err := database.DB.Model(&models.Staff{}).Where("id = ?", actorID).Update("avatar", s3URL).Error; err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update admin avatar in database"})
+	}
+
+	// 4. Log the action
+	utils.RecordAudit(actorID, actorName, "INFO", "Staff", actorID.String(), "Admin updated profile picture", ctx.IP())
+
+	// 5. Broadcast if needed (optional)
+	websockets.BroadcastMessage("STAFF_UPDATED", fiber.Map{
+		"staff_id": actorID,
+		"avatar":   s3URL,
+	})
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Admin profile picture updated successfully",
+		"avatar":  s3URL,
 	})
 }
