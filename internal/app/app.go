@@ -11,16 +11,15 @@ import (
 	
 	"lendogo-backend/internal/controllers/admin_controller" 
 	"lendogo-backend/internal/controllers/auth_controller"
+	"lendogo-backend/internal/controllers/career_controller" 
 	"lendogo-backend/internal/controllers/chat_controller"
+	"lendogo-backend/internal/controllers/config_controller"
 	consultation_controller "lendogo-backend/internal/controllers/consultation_controller"
 	"lendogo-backend/internal/controllers/loan_controller"
 	"lendogo-backend/internal/controllers/payment_controller"
 	"lendogo-backend/internal/controllers/user_profile_controller"
 	"lendogo-backend/internal/controllers/wallet_controller"
 	
-	// 👈 ADDED: Import the new Career Controller
-	"lendogo-backend/internal/controllers/career_controller" 
-
 	"lendogo-backend/internal/jobs"
 	"lendogo-backend/internal/repositories"
 	"lendogo-backend/internal/routes"
@@ -71,7 +70,8 @@ type Repositories struct {
 	Profile      repositories.UserProfileRepository
 	Payment      repositories.PaymentRepository 
 	Admin        repositories.AdminRepository
-	Career       repositories.CareerRepository // 👈 ADDED
+	Career       repositories.CareerRepository 
+	Config       repositories.ConfigRepository // 👈 Added Config Repo
 }
 
 func setupRepositories() Repositories {
@@ -84,7 +84,8 @@ func setupRepositories() Repositories {
 		Profile:      repositories.NewUserProfileRepository(database.DB),
 		Payment:      repositories.NewPaymentRepository(database.DB),
 		Admin:        repositories.NewAdminRepository(database.DB), 
-		Career:       repositories.NewCareerRepository(database.DB), // 👈 ADDED
+		Career:       repositories.NewCareerRepository(database.DB),
+		Config:       repositories.NewConfigRepository(database.DB), // 👈 Added Config Repo
 	}
 }
 
@@ -97,7 +98,8 @@ type Services struct {
 	ChatHub      *services.ChatHub
 	Payment      services.PaymentService
 	Admin        services.AdminService 
-	Career       services.CareerService // 👈 ADDED
+	Career       services.CareerService
+	Config       services.ConfigService // 👈 Added Config Service
 }
 
 func setupServices(r Repositories, producer *utils.KafkaProducer) Services {
@@ -114,6 +116,7 @@ func setupServices(r Repositories, producer *utils.KafkaProducer) Services {
 		Payment:      services.NewPaymentService(), 
 		Admin:        services.NewAdminService(r.Admin), 
 		Career:       services.NewCareerService(r.Career),
+		Config:       services.NewConfigService(r.Config), // 👈 Added Config Service
 	}
 }
 
@@ -138,7 +141,9 @@ func startCronJobs(s Services) {
 func setupRoutes(app *fiber.App, s Services, r Repositories) {
 	api := app.Group("/api")
 
-	// Initialize Standard Controllers
+	// ==========================================
+	// Initialize Controllers
+	// ==========================================
 	authController := auth_controller.NewAuthController(s.Auth)
 	consultationController := consultation_controller.NewConsultationController(s.Consultation)
 	loanController := loan_controller.NewLoanController(s.Loan)
@@ -147,18 +152,25 @@ func setupRoutes(app *fiber.App, s Services, r Repositories) {
 	profileController := user_profile_controller.NewUserProfileController(s.Profile)
 	paymentController := payment_controller.NewPaymentController(s.Payment, r.Payment)
 	adminController := admin_controller.NewAdminController(s.Admin)
-	
-	careerController := career_controller.NewCareerController(s.Career) 
+	careerController := career_controller.NewCareerController(s.Career)
+	configController := config_controller.NewConfigController(s.Config) 
 
+	// ==========================================
 	// Setup Standard Routes
-	routes.SetupAuthRoutes(api, authController)
-	routes.SetupConsultationRoutes(api, consultationController)
-	routes.SetupLoanRoutes(api, loanController)
+	// ==========================================
 	routes.SetupWalletRoutes(api, walletController)
-	routes.SetupChatRoutes(api, chatController)
-	routes.SetupUserProfileRoutes(api, profileController)
 	routes.SetupPaymentRoutes(api, paymentController)
 	routes.SetupAdminRoutes(api, adminController)
-	
-	routes.SetupCareerRoutes(api, careerController) 
+	routes.SetupConfigRoutes(api, configController) 
+
+	// ==========================================
+	// Setup Feature-Toggled Routes
+	// (Passing s.Config so the middleware can check if they are enabled)
+	// ==========================================
+	routes.SetupAuthRoutes(api, authController, s.Config)
+	routes.SetupConsultationRoutes(api, consultationController, s.Config)
+	routes.SetupChatRoutes(api, chatController, s.Config)
+	routes.SetupUserProfileRoutes(api, profileController, s.Config)
+	routes.SetupLoanRoutes(api, loanController, s.Config) 
+	routes.SetupCareerRoutes(api, careerController, s.Config) 
 }

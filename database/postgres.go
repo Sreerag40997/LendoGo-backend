@@ -45,6 +45,7 @@ func Connect() error {
 		&models.AuditLog{},
 		&models.CareerOpening{},
 		&models.JobApplication{},
+		&models.WebConfiguration{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to run database migrations: %w", err)
