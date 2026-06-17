@@ -48,7 +48,15 @@ func RequirePermission(requiredArea string) fiber.Handler {
 		}
 
 		// 5. Check if the required permission toggle is set to TRUE
-		if hasAccess, exists := staff.Permissions[mappedArea]; !exists || !hasAccess {
+		// First check granular (e.g. "loans.view"), then fallback to top-level UI area
+		hasAccess := false
+		if val, exists := staff.Permissions[requiredArea]; exists && val {
+			hasAccess = true
+		} else if val, exists := staff.Permissions[mappedArea]; exists && val {
+			hasAccess = true
+		}
+
+		if !hasAccess {
 			// 🔒 KICK THEM OUT! They don't have the toggle enabled.
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"error": "Access Denied: Your role does not have clearance for the '" + mappedArea + "' module.",

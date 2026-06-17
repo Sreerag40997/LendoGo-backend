@@ -58,7 +58,45 @@ func (s *authServiceImpl) Register(req dto.RegisterReq) error {
 // 2. LOGIN
 // ==========================================
 func (s *authServiceImpl) Login(req dto.LoginReq) (*dto.AuthRes, error) {
-	// Try standard users first
+	// If found in staffs table, check and return staff profile
+	var staff models.Staff
+	if err := database.DB.Where("email = ?", req.Email).First(&staff).Error; err == nil {
+		isValid := utils.CheckPasswordHash(req.Password, staff.Password)
+		if !isValid {
+			return nil, errors.New("invalid email or password")
+		}
+
+		if staff.Status == "Blocked" {
+			return nil, errors.New("account suspended by an administrator")
+		}
+
+		effectiveRole := staff.Role
+		if staff.Email == "admin@gmail.com" || staff.Email == "admin.flow@lendogo.com" {
+			effectiveRole = "admin"
+		}
+
+		token, err := utils.GenerateToken(staff.ID.String(), effectiveRole, staff.FullName, staff.Email)
+		if err != nil {
+			return nil, errors.New("failed to generate login token")
+		}
+
+		res := &dto.AuthRes{
+			Token: token,
+			User: dto.UserRes{
+				ID:          staff.ID.String(),
+				FullName:    staff.FullName,
+				Email:       staff.Email,
+				Avatar:      utils.GeneratePresignedURL(staff.Avatar),
+				Role:        effectiveRole,
+				Status:      staff.Status,
+				Permissions: staff.Permissions,
+			},
+		}
+
+		return res, nil
+	}
+
+	// Try standard users if not staff
 	user, err := s.userRepo.FindByEmail(req.Email)
 	if err == nil {
 		isValid := utils.CheckPasswordHash(req.Password, user.Password)
@@ -90,39 +128,6 @@ func (s *authServiceImpl) Login(req dto.LoginReq) (*dto.AuthRes, error) {
 				Avatar:   avatar,
 				Role:     effectiveRole,
 				Status:   user.Status,
-			},
-		}
-
-		return res, nil
-	}
-
-	// If not found in users, check staffs table
-	var staff models.Staff
-	if err := database.DB.Where("email = ?", req.Email).First(&staff).Error; err == nil {
-		isValid := utils.CheckPasswordHash(req.Password, staff.Password)
-		if !isValid {
-			return nil, errors.New("invalid email or password")
-		}
-
-		if staff.Status == "Blocked" {
-			return nil, errors.New("account suspended by an administrator")
-		}
-
-		token, err := utils.GenerateToken(staff.ID.String(), staff.Role, staff.FullName, staff.Email)
-		if err != nil {
-			return nil, errors.New("failed to generate login token")
-		}
-
-		res := &dto.AuthRes{
-			Token: token,
-			User: dto.UserRes{
-				ID:          staff.ID.String(),
-				FullName:    staff.FullName,
-				Email:       staff.Email,
-				Avatar:      utils.GeneratePresignedURL(staff.Avatar),
-				Role:        staff.Role,
-				Status:      staff.Status,
-				Permissions: staff.Permissions,
 			},
 		}
 

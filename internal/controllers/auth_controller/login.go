@@ -44,6 +44,7 @@ func (c *AuthController) Login(ctx *fiber.Ctx) error {
 	cookie.HTTPOnly = true  // JavaScript CANNOT read this (Protects against XSS)
 	cookie.Secure = false   // IMPORTANT: Keep 'false' for localhost HTTP. Change to 'true' in Production (HTTPS)
 	cookie.SameSite = "lax" // Protects against CSRF attacks
+	cookie.Path = "/"       // CRITICAL: Ensure the cookie applies to the whole API
 
 	// Step 4: Attach the cookie to the HTTP response
 	ctx.Cookie(cookie)

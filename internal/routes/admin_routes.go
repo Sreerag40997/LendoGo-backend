@@ -105,6 +105,7 @@ func SetupAdminRoutes(api fiber.Router, adminCtrl *admin_controller.AdminControl
 	// ADMIN PROFILE SETTINGS
 	// ==========================================
 	adminGroup.Post("/profile/avatar", adminCtrl.UpdateAdminAvatar)
+	adminGroup.Put("/profile", adminCtrl.UpdateAdminProfileDetails)
 }
 
 

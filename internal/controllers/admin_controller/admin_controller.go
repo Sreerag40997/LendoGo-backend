@@ -349,8 +349,151 @@ func (c *AdminController) UpdateUserStatus(ctx *fiber.Ctx) error {
 // ==========================================
 
 func (c *AdminController) GetSystemStats(ctx *fiber.Ctx) error {
-	// GET route - no broadcast needed
-	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{"message": "System is running", "active_loans": 42})
+	timeframe := ctx.Query("timeframe", "year") // default to year
+	track := ctx.Query("track", "all")
+
+	now := time.Now()
+	var startDate time.Time
+
+	switch timeframe {
+	case "day":
+		startDate = now.AddDate(0, 0, -1)
+	case "week":
+		startDate = now.AddDate(0, 0, -7)
+	case "month":
+		startDate = now.AddDate(0, -1, 0)
+	case "year":
+		startDate = now.AddDate(-1, 0, 0)
+	default:
+		startDate = now.AddDate(-1, 0, 0)
+	}
+
+	baseQuery := database.DB.Model(&models.LoanApplication{}).
+		Where("application_status = ? AND created_at >= ?", "DISBURSED", startDate)
+	if track != "all" && track != "" {
+		baseQuery = baseQuery.Where("loan_track = ?", track)
+	}
+
+	var totalDisbursed float64
+	baseQuery.Select("COALESCE(SUM(principal_amount), 0)").Scan(&totalDisbursed)
+
+	var activePortfolio float64
+	// For now, assume active portfolio is total disbursed in timeframe minus any closures (simplified to total disbursed)
+	baseQuery.Select("COALESCE(SUM(principal_amount), 0)").Scan(&activePortfolio)
+
+	type CategorySum struct {
+		ProductCategory string
+		Total           float64
+	}
+	var categories []CategorySum
+	baseQuery.Select("product_category, COALESCE(SUM(principal_amount), 0) as total").
+		Group("product_category").Scan(&categories)
+
+	distMap := make(map[string]float64)
+	for _, c := range categories {
+		distMap[c.ProductCategory] = c.Total
+	}
+
+	// Make sure we have some defaults so charts don't break
+	if len(distMap) == 0 {
+		distMap["Personal"] = 0
+		distMap["Business"] = 0
+		distMap["Home"] = 0
+	}
+
+	type ChartDataPoint struct {
+		Date       string  `json:"date"`
+		Disbursed  float64 `json:"disbursed"`
+		Repayments float64 `json:"repayments"`
+	}
+	var chartData []ChartDataPoint
+
+	var loans []models.LoanApplication
+	loansQuery := database.DB.Where("application_status = ? AND created_at >= ?", "DISBURSED", startDate)
+	if track != "all" && track != "" {
+		loansQuery = loansQuery.Where("loan_track = ?", track)
+	}
+	loansQuery.Find(&loans)
+
+	if timeframe == "year" {
+		for i := 11; i >= 0; i-- {
+			d := now.AddDate(0, -i, 0)
+			chartData = append(chartData, ChartDataPoint{Date: d.Format("2006-01"), Disbursed: 0, Repayments: 0})
+		}
+		for _, l := range loans {
+			monthStr := l.CreatedAt.Format("2006-01")
+			for i := range chartData {
+				if chartData[i].Date == monthStr {
+					chartData[i].Disbursed += l.PrincipalAmount
+				}
+			}
+		}
+	} else if timeframe == "month" {
+		for i := 29; i >= 0; i-- {
+			d := now.AddDate(0, 0, -i)
+			chartData = append(chartData, ChartDataPoint{Date: d.Format("Jan 02"), Disbursed: 0, Repayments: 0})
+		}
+		for _, l := range loans {
+			dayStr := l.CreatedAt.Format("Jan 02")
+			for i := range chartData {
+				if chartData[i].Date == dayStr {
+					chartData[i].Disbursed += l.PrincipalAmount
+				}
+			}
+		}
+	} else if timeframe == "week" {
+		for i := 6; i >= 0; i-- {
+			d := now.AddDate(0, 0, -i)
+			chartData = append(chartData, ChartDataPoint{Date: d.Format("Jan 02"), Disbursed: 0, Repayments: 0})
+		}
+		for _, l := range loans {
+			dayStr := l.CreatedAt.Format("Jan 02")
+			for i := range chartData {
+				if chartData[i].Date == dayStr {
+					chartData[i].Disbursed += l.PrincipalAmount
+				}
+			}
+		}
+	} else if timeframe == "day" {
+		for i := 23; i >= 0; i-- {
+			d := now.Add(-time.Duration(i) * time.Hour)
+			chartData = append(chartData, ChartDataPoint{Date: d.Format("15:00"), Disbursed: 0, Repayments: 0})
+		}
+		for _, l := range loans {
+			hourStr := l.CreatedAt.Format("15:00")
+			for i := range chartData {
+				if chartData[i].Date == hourStr {
+					chartData[i].Disbursed += l.PrincipalAmount
+				}
+			}
+		}
+	}
+
+	var totalUsers int64
+	database.DB.Model(&models.User{}).Count(&totalUsers)
+
+	var totalStaff int64
+	database.DB.Model(&models.Staff{}).Count(&totalStaff)
+
+	var totalLoans int64
+	database.DB.Model(&models.LoanApplication{}).Count(&totalLoans)
+
+	var totalKYC int64
+	database.DB.Model(&models.KYCDocuments{}).Count(&totalKYC)
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "System is running",
+		"active_portfolio": activePortfolio,
+		"total_disbursed": totalDisbursed,
+		"distribution": distMap,
+		"chart_data": chartData,
+		"top_stats": fiber.Map{
+			"total_users": totalUsers,
+			"total_staff": totalStaff,
+			"total_loans": totalLoans,
+			"total_kyc":   totalKYC,
+		},
+	})
 }
 
 func (c *AdminController) GetAllApplications(ctx *fiber.Ctx) error {
@@ -488,9 +631,15 @@ func (c *AdminController) UpdateAdminAvatar(ctx *fiber.Ctx) error {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to upload image to S3"})
 	}
 
+	actorEmail, _ := ctx.Locals("email").(string)
+
 	// 3. Update the staff record in the database
-	if err := database.DB.Model(&models.Staff{}).Where("id = ?", actorID).Update("avatar", s3URL).Error; err != nil {
-		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update admin avatar in database"})
+	res := database.DB.Model(&models.Staff{}).Where("id = ?", actorID).Update("avatar", s3URL)
+
+	// 🔒 BUG FIX: If they were using an old bugged JWT token that contained the borrower 'users' table ID instead of the 'staffs' table ID,
+	// the update by ID will silently affect 0 rows! If that happens, we update safely by their email.
+	if res.RowsAffected == 0 && actorEmail != "" {
+		database.DB.Model(&models.Staff{}).Where("email = ?", actorEmail).Update("avatar", s3URL)
 	}
 
 	// 4. Log the action
@@ -507,5 +656,55 @@ func (c *AdminController) UpdateAdminAvatar(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Admin profile picture updated successfully",
 		"avatar":  presignedURL,
+	})
+}
+
+func (c *AdminController) UpdateAdminProfileDetails(ctx *fiber.Ctx) error {
+	actorID, actorName := getActor(ctx)
+
+	var req struct {
+		FullName string `json:"full_name"`
+		Email    string `json:"email"`
+	}
+
+	if err := ctx.BodyParser(&req); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
+	}
+
+	if req.FullName == "" || req.Email == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Name and email are required"})
+	}
+
+	actorEmail, _ := ctx.Locals("email").(string)
+	if actorEmail == "" {
+		actorEmail = req.Email // fallback to what they provided if token lacks it
+	}
+
+	// Update the staff record in the database
+	res := database.DB.Model(&models.Staff{}).Where("id = ?", actorID).Updates(map[string]interface{}{
+		"full_name": req.FullName,
+		"email":     req.Email,
+	})
+
+	// 🔒 BUG FIX: If they were using an old bugged JWT token that contained the borrower 'users' table ID instead of the 'staffs' table ID,
+	// the update by ID will silently affect 0 rows! If that happens, we update safely by their email.
+	if res.RowsAffected == 0 {
+		database.DB.Model(&models.Staff{}).Where("email = ?", actorEmail).Updates(map[string]interface{}{
+			"full_name": req.FullName,
+			"email":     req.Email,
+		})
+	}
+
+	// For maximum consistency, if they have a dual borrower account, update it too!
+	database.DB.Model(&models.User{}).Where("email = ?", actorEmail).Updates(map[string]interface{}{
+		"full_name": req.FullName,
+		"email":     req.Email,
+	})
+
+	// Log the action
+	utils.RecordAudit(actorID, actorName, "INFO", "Staff", actorID.String(), "Admin updated profile details", ctx.IP())
+
+	return ctx.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Profile details updated successfully",
 	})
 }
