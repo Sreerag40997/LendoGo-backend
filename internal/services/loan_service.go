@@ -18,11 +18,15 @@ type LoanService interface {
 	ProcessApplication(loan *models.LoanApplication) error
 	ApproveAndDisburse(loanID uuid.UUID) error
 	GenerateEMISchedule(ctx context.Context, loanIDStr string) error
-	ProcessDueEMIs(ctx context.Context) error // 👈 Added contract for Cronjob
+	ProcessDueEMIs(ctx context.Context) error 
 
 	// Frontend API Services
 	GetMyLoans(userID string) ([]models.LoanApplication, error)
 	GetMyRepayments(loanID string) ([]models.EMISchedule, error)
+
+	// 👇 NEW: Kafka Payment Event Services
+	MarkEMIPaid(ctx context.Context, scheduleID string) error
+	ApplyPenalty(ctx context.Context, loanID string) error
 }
 
 type loanServiceImpl struct {
@@ -135,9 +139,9 @@ func (s *loanServiceImpl) ProcessDueEMIs(ctx context.Context) error {
 		if err != nil {
 			fmt.Printf("❌ Failed to update EMI status for %v: %v\n", emi.ID, err)
 		} else {
-			fmt.Printf("🔔 DISPATCH NOTIFICATION: User %v owes ₹%.2f for Loan %v (Installment %d) -> Marked OVERDUE\n", 
+			fmt.Printf("🔔 DISPATCH NOTIFICATION: User %v owes ₹%.2f for Loan %v (Installment %d) -> Marked OVERDUE\n",
 				emi.UserID, emi.EMI, emi.LoanID, emi.InstallmentNo)
-			
+
 			// Dispatch In-App Notification
 			notifMsg := fmt.Sprintf("Repayment due: EMI of ₹%.2f on %s.", emi.EMI, emi.DueDate.Format("Jan 02, 2006"))
 			s.notifService.SendNotification(emi.UserID, notifMsg, "WARNING", "repayment")
@@ -165,4 +169,16 @@ func (s *loanServiceImpl) GetMyRepayments(loanID string) ([]models.EMISchedule, 
 		return nil, fmt.Errorf("invalid loan ID: %v", err)
 	}
 	return s.repo.GetEMIsByLoanID(loanUUID)
+}
+
+// ==========================================
+// 👇 KAFKA PAYMENT EVENT SERVICES (NEW) 👇
+// ==========================================
+
+func (s *loanServiceImpl) MarkEMIPaid(ctx context.Context, scheduleID string) error {
+	return s.repo.MarkEMIPaid(ctx, scheduleID)
+}
+
+func (s *loanServiceImpl) ApplyPenalty(ctx context.Context, loanID string) error {
+	return s.repo.ApplyPenalty(ctx, loanID)
 }

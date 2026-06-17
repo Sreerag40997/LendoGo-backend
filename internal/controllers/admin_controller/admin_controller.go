@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"os"
 	"time"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -17,8 +16,7 @@ import (
 	"lendogo-backend/internal/services" 
 	"lendogo-backend/structures/models"
 	"lendogo-backend/utils"
-	
-	// 👇 THE MAGIC IMPORT
+
 	"lendogo-backend/internal/websockets" 
 )
 

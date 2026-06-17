@@ -20,7 +20,7 @@ import (
 	"lendogo-backend/internal/controllers/payment_controller"
 	"lendogo-backend/internal/controllers/user_profile_controller"
 	"lendogo-backend/internal/controllers/wallet_controller"
-	"lendogo-backend/internal/controllers/feedback_controller" // 👈 ADDED: Feedback Controller
+	"lendogo-backend/internal/controllers/feedback_controller" 
 	
 	"lendogo-backend/internal/jobs"
 	"lendogo-backend/internal/repositories"
@@ -75,7 +75,7 @@ type Repositories struct {
 	Career       repositories.CareerRepository 
 	Config       repositories.ConfigRepository 
 	Notification repositories.NotificationRepository
-	Feedback     repositories.FeedbackRepository // 👈 ADDED: Feedback Repo
+	Feedback     repositories.FeedbackRepository 
 }
 
 func setupRepositories() Repositories {
@@ -91,7 +91,7 @@ func setupRepositories() Repositories {
 		Career:       repositories.NewCareerRepository(database.DB),
 		Config:       repositories.NewConfigRepository(database.DB), 
 		Notification: repositories.NewNotificationRepository(database.DB),
-		Feedback:     repositories.NewFeedbackRepository(database.DB), // 👈 ADDED: Feedback Repo
+		Feedback:     repositories.NewFeedbackRepository(database.DB), 
 	}
 }
 
@@ -107,7 +107,7 @@ type Services struct {
 	Career       services.CareerService
 	Config       services.ConfigService 
 	Notification services.NotificationService
-	Feedback     services.FeedbackService // 👈 ADDED: Feedback Service
+	Feedback     services.FeedbackService 
 }
 
 func setupServices(r Repositories, producer *utils.KafkaProducer) Services {
@@ -126,7 +126,7 @@ func setupServices(r Repositories, producer *utils.KafkaProducer) Services {
 		Career:       services.NewCareerService(r.Career),
 		Config:       services.NewConfigService(r.Config), 
 		Notification: services.NewNotificationService(r.Notification),
-		Feedback:     services.NewFeedbackService(r.Feedback), // 👈 ADDED: Feedback Service
+		Feedback:     services.NewFeedbackService(r.Feedback), 
 	}
 }
 
@@ -136,7 +136,8 @@ func startConsumers(s Services) {
 		broker = "localhost:9092"
 	}
 
-	paymentConsumer := consumers.NewPaymentConsumer(broker, "telemetry.payments", "payment-processor-group", s.Loan)
+	// 👇 FIX: Added s.Notification to the PaymentConsumer!
+	paymentConsumer := consumers.NewPaymentConsumer(broker, "telemetry.payments", "payment-processor-group", s.Loan, s.Notification)
 	go paymentConsumer.Start(context.Background())
 
 	loanConsumer := consumers.NewLoanConsumer(broker, "telemetry.loans", "loan-processor-group", s.Loan, s.Notification)
@@ -165,7 +166,7 @@ func setupRoutes(app *fiber.App, s Services, r Repositories) {
 	careerController := career_controller.NewCareerController(s.Career)
 	configController := config_controller.NewConfigController(s.Config) 
 	notificationController := notification_controller.NewNotificationController(s.Notification)
-	feedbackController := feedback_controller.NewFeedbackController(s.Feedback) // 👈 ADDED: Feedback Controller
+	feedbackController := feedback_controller.NewFeedbackController(s.Feedback) 
 
 	// ==========================================
 	// Setup Standard Routes
@@ -178,7 +179,6 @@ func setupRoutes(app *fiber.App, s Services, r Repositories) {
 
 	// ==========================================
 	// Setup Feature-Toggled Routes
-	// (Passing s.Config so the middleware can check if they are enabled)
 	// ==========================================
 	routes.SetupAuthRoutes(api, authController, s.Config)
 	routes.SetupConsultationRoutes(api, consultationController, s.Config)
@@ -186,7 +186,5 @@ func setupRoutes(app *fiber.App, s Services, r Repositories) {
 	routes.SetupUserProfileRoutes(api, profileController, s.Config)
 	routes.SetupLoanRoutes(api, loanController, s.Config) 
 	routes.SetupCareerRoutes(api, careerController, s.Config) 
-	
-	// 👇 ADDED: Feedback Route protected by the Config Bouncer!
 	routes.SetupFeedbackRoutes(api, feedbackController, s.Config) 
 }

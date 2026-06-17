@@ -1,8 +1,9 @@
 package repositories
 
 import (
+	"context"
 	"errors"
-	"time" // 👈 Added for Cron date comparisons
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -25,13 +26,17 @@ type LoanRepository interface {
 	GetLoanByID(loanID uuid.UUID) (*models.LoanApplication, error)
 	CreateEMISchedules(schedules []models.EMISchedule) error
 
-	// 👇 NEW: Cronjob Queries
+	// Cronjob Queries
 	GetDueEMIs(today time.Time) ([]models.EMISchedule, error)
 	UpdateEMIStatus(emiID uuid.UUID, status string) error
 
 	// Frontend API Queries
 	GetLoansByUserID(userID uuid.UUID) ([]models.LoanApplication, error)
 	GetEMIsByLoanID(loanID uuid.UUID) ([]models.EMISchedule, error)
+
+	// Kafka Payment Event Queries
+	MarkEMIPaid(ctx context.Context, scheduleID string) error
+	ApplyPenalty(ctx context.Context, loanID string) error
 }
 
 type loanRepositoryImpl struct {
@@ -49,8 +54,6 @@ func (r *loanRepositoryImpl) CreateApplication(loan *models.LoanApplication) err
 }
 
 // DisburseLoanTx executes an atomic, double-entry ledger update transferring principal
-// from the master system wallet to the borrower's wallet. It enforces pessimistic 
-// row-level locks (SELECT FOR UPDATE) to guarantee isolation during concurrent requests.
 func (r *loanRepositoryImpl) DisburseLoanTx(loanID uuid.UUID) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var loan models.LoanApplication
@@ -78,7 +81,7 @@ func (r *loanRepositoryImpl) DisburseLoanTx(loanID uuid.UUID) error {
 			return ErrInsufficientCapital
 		}
 
-		// 3. Mutate Master Ledger (Debit). Using UpdateColumn to bypass ORM hooks and optimize execution
+		// 3. Mutate Master Ledger (Debit)
 		if err := tx.Model(&sysWallet).
 			UpdateColumn("balance", gorm.Expr("balance - ?", loan.PrincipalAmount)).Error; err != nil {
 			return err
@@ -138,7 +141,7 @@ func (r *loanRepositoryImpl) CreateEMISchedules(schedules []models.EMISchedule) 
 }
 
 // ==========================================
-// 👇 NEW: CRONJOB EMI CHECKER QUERIES 👇
+// CRONJOB EMI CHECKER QUERIES
 // ==========================================
 
 // GetDueEMIs finds all unpaid EMIs where the due date is today or earlier
@@ -151,6 +154,30 @@ func (r *loanRepositoryImpl) GetDueEMIs(today time.Time) ([]models.EMISchedule, 
 // UpdateEMIStatus changes an EMI from PENDING to PAID or OVERDUE
 func (r *loanRepositoryImpl) UpdateEMIStatus(emiID uuid.UUID, status string) error {
 	return r.db.Model(&models.EMISchedule{}).Where("id = ?", emiID).Update("status", status).Error
+}
+
+// ==========================================
+// KAFKA PAYMENT EVENT QUERIES (NEW)
+// ==========================================
+
+// MarkEMIPaid updates a specific EMI schedule row to 'Paid' and sets the payment date
+func (r *loanRepositoryImpl) MarkEMIPaid(ctx context.Context, scheduleID string) error {
+	return r.db.WithContext(ctx).
+		Model(&models.EMISchedule{}).
+		Where("id = ?", scheduleID).
+		Updates(map[string]interface{}{
+			"status":    "Paid",
+			"paid_date": time.Now(), // Assuming you have or will want a paid_date column
+		}).Error
+}
+
+// ApplyPenalty updates the loan status when an EMI is missed.
+// In a full enterprise system, you would also use gorm.Expr to add a fee to a "PenaltyAmount" column.
+func (r *loanRepositoryImpl) ApplyPenalty(ctx context.Context, loanID string) error {
+	return r.db.WithContext(ctx).
+		Model(&models.LoanApplication{}).
+		Where("id = ?", loanID).
+		Update("application_status", "DEFAULTED").Error // Assuming standard status is DEFAULTED
 }
 
 // ==========================================
